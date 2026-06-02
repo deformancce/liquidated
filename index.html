@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#080a0f">
+    <title>Liquidated</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <canvas id="flowCanvas" aria-label="Liquidated flow visualizer"></canvas>
+
+      <section class="top-bar" aria-label="Market controls">
+        <div class="brand-block">
+          <p class="kicker">Liquidated</p>
+          <h1>BTCUSDT</h1>
+        </div>
+
+        <div class="control-strip">
+          <label class="field">
+            <span>Pair</span>
+            <select id="symbolSelect">
+              <option value="btcusdt" selected>BTCUSDT</option>
+              <option value="ethusdt">ETHUSDT</option>
+              <option value="solusdt">SOLUSDT</option>
+              <option value="bnbusdt">BNBUSDT</option>
+            </select>
+          </label>
+
+          <div class="segment" aria-label="Data mode">
+            <button id="liveButton" class="active" type="button">Live</button>
+            <button id="demoButton" type="button">Demo</button>
+          </div>
+
+          <button id="audioButton" class="audio-button" type="button" aria-pressed="false">
+            <span class="audio-dot" aria-hidden="true"></span>
+            Audio
+          </button>
+        </div>
+      </section>
+
+      <aside class="side-panel" aria-label="Flow metrics and settings">
+        <div class="status-row">
+          <span id="statusLight" class="status-light"></span>
+          <span id="statusText">Connecting</span>
+        </div>
+
+        <div class="metric-grid">
+          <div>
+            <span>Buy Flow</span>
+            <strong id="buyFlow">$0</strong>
+          </div>
+          <div>
+            <span>Sell Flow</span>
+            <strong id="sellFlow">$0</strong>
+          </div>
+          <div>
+            <span>Liqs</span>
+            <strong id="liquidations">0</strong>
+          </div>
+          <div>
+            <span>Pulse</span>
+            <strong id="pulse">0</strong>
+          </div>
+        </div>
+
+        <div class="meter-wrap">
+          <div class="meter-label">
+            <span>Pressure</span>
+            <strong id="pressureLabel">Neutral</strong>
+          </div>
+          <div class="meter">
+            <div id="pressureFill" class="meter-fill"></div>
+          </div>
+        </div>
+
+        <div class="settings">
+          <label>
+            <span>Sensitivity</span>
+            <input id="sensitivity" type="range" min="0.4" max="2.5" step="0.1" value="1.2">
+          </label>
+          <label>
+            <span>Min Size</span>
+            <input id="minSize" type="range" min="0" max="250000" step="5000" value="15000">
+          </label>
+          <label>
+            <span>Volume</span>
+            <input id="volume" type="range" min="0" max="0.9" step="0.03" value="0.28">
+          </label>
+        </div>
+
+        <ol id="eventTape" class="event-tape" aria-label="Recent flow events"></ol>
+      </aside>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
