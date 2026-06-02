@@ -106,6 +106,11 @@ export class LiquidRenderer {
         curl: settings.turbulence + signal.intensity * (isCascade ? 0.34 : 0.16),
         splatRadius: 0.009 + signal.intensity * (isCascade ? 0.005 : 0.0032),
       });
+      if (isCascade) {
+        this.pushLiquidationShockwave(signal.intensity, settings);
+        return;
+      }
+
       this.fluid.splat({
         x,
         y: isCascade ? 0.5 : 0.18 + Math.random() * 0.64,
@@ -197,6 +202,38 @@ export class LiquidRenderer {
       color: COLORS.core,
       radius: 0.014 + settings.viscosity * 0.008,
       force: 0.16 + settings.turbulence * 0.08,
+    });
+  }
+
+  private pushLiquidationShockwave(intensity: number, settings: ScannerSettings): void {
+    if (!this.fluid) return;
+    const direction = this.pressureBias >= 0 ? 1 : -1;
+    const startX = direction > 0 ? 0.08 : 0.92;
+    const force = 2.8 + intensity * 1.2;
+    const radius = 0.018 + intensity * 0.006;
+    const rows = [0.28, 0.42, 0.56, 0.7];
+
+    rows.forEach((y, index) => {
+      const phase = index / Math.max(1, rows.length - 1);
+      this.fluid?.splat({
+        x: clamp(startX + direction * phase * 0.22, 0.06, 0.94),
+        y,
+        dx: direction * force * (1.15 - phase * 0.28),
+        dy: (phase - 0.5) * (1.5 + settings.turbulence),
+        color: COLORS.cascade,
+        radius,
+        force: 2.6 + intensity * 0.7,
+      });
+    });
+
+    this.fluid.splat({
+      x: this.pressureToX(),
+      y: 0.5,
+      dx: direction * force * 1.65,
+      dy: 0,
+      color: COLORS.core,
+      radius: radius * 1.45,
+      force: 3.4 + intensity,
     });
   }
 
