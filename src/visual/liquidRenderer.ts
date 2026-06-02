@@ -30,6 +30,7 @@ export class LiquidRenderer {
   private lastFrame = performance.now();
   private lastAmbientSplat = 0;
   private pressure = 0;
+  private pressureBias = 0;
   private turbulence = 0;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -56,8 +57,12 @@ export class LiquidRenderer {
 
   pushTrade(trade: TradeEvent, settings: ScannerSettings): void {
     const intensity = clamp(Math.log10(trade.size + 1) / 6, 0.25, 1.75) * settings.sensitivity;
+    this.applyPressure(trade.side === "buy" ? intensity : -intensity);
+
     if (this.fluid) {
-      const fromLeft = trade.side === "buy";
+      const pressureX = this.pressureToX();
+      const sideOffset = trade.side === "buy" ? 0.08 : -0.08;
+      const x = clamp(pressureX + sideOffset + (Math.random() - 0.5) * 0.18, 0.08, 0.92);
       this.fluid.setConfig({
         densityDissipation: 0.988 + settings.viscosity * 0.008,
         velocityDissipation: 0.966 + settings.viscosity * 0.022,
@@ -65,9 +70,9 @@ export class LiquidRenderer {
         splatRadius: 0.006 + intensity * 0.0038,
       });
       this.fluid.splat({
-        x: fromLeft ? 0.12 + Math.random() * 0.26 : 0.62 + Math.random() * 0.26,
+        x,
         y: 0.14 + Math.random() * 0.72,
-        dx: (fromLeft ? 1 : -1) * (0.55 + intensity * 1.35),
+        dx: this.pressureBias * (1.2 + intensity * 1.2) + (trade.side === "buy" ? 0.42 : -0.42),
         dy: (Math.random() - 0.5) * (0.95 + settings.turbulence * 0.8),
         color: COLORS[trade.side],
         radius: 0.0065 + intensity * 0.0044,
@@ -85,10 +90,16 @@ export class LiquidRenderer {
   pushSignal(signal: FlowSignal, settings: ScannerSettings): void {
     const side = signal.side === "neutral" ? "buy" : signal.side;
     const colorKey = signal.type === "cascadeRisk" ? "cascade" : signal.type.includes("absorption") ? "absorption" : side;
+    if (signal.side !== "neutral") {
+      this.applyPressure(signal.side === "buy" ? signal.intensity * 1.35 : -signal.intensity * 1.35);
+    }
+
     if (this.fluid) {
       const isCascade = signal.type === "cascadeRisk";
       const isAbsorption = signal.type.includes("absorption");
-      const fromLeft = side === "buy" || isAbsorption;
+      const pressureX = this.pressureToX();
+      const absorptionOffset = isAbsorption ? -Math.sign(this.pressureBias || (side === "buy" ? 1 : -1)) * 0.16 : 0;
+      const x = isCascade ? pressureX : clamp(pressureX + absorptionOffset + (Math.random() - 0.5) * 0.16, 0.08, 0.92);
       this.fluid.setConfig({
         densityDissipation: isCascade ? 0.995 : 0.989 + settings.viscosity * 0.007,
         velocityDissipation: isCascade ? 0.978 : 0.966 + settings.viscosity * 0.02,
@@ -96,9 +107,9 @@ export class LiquidRenderer {
         splatRadius: 0.009 + signal.intensity * (isCascade ? 0.005 : 0.0032),
       });
       this.fluid.splat({
-        x: isCascade ? 0.5 : fromLeft ? 0.24 : 0.76,
+        x,
         y: isCascade ? 0.5 : 0.18 + Math.random() * 0.64,
-        dx: isCascade ? (Math.random() - 0.5) * 4.2 : (fromLeft ? 1 : -1) * (1.05 + signal.intensity * 0.9),
+        dx: isCascade ? this.pressureBias * 4.2 + (Math.random() - 0.5) * 2.2 : this.pressureBias * (1.5 + signal.intensity) + (side === "buy" ? 0.36 : -0.36),
         dy: isCascade ? (Math.random() - 0.5) * 4.2 : (Math.random() - 0.5) * 1.7,
         color: COLORS[colorKey],
         radius: 0.01 + signal.intensity * (isCascade ? 0.005 : 0.0028),
@@ -121,6 +132,7 @@ export class LiquidRenderer {
       });
       this.pushAmbientFluid(settings);
       this.fluid.render();
+      this.pressureBias *= 0.992;
       requestAnimationFrame(() => this.render(settings));
       return;
     }
@@ -138,6 +150,7 @@ export class LiquidRenderer {
     this.drawParticles(dt);
 
     this.pressure *= 0.985;
+    this.pressureBias *= 0.992;
     this.turbulence *= 0.965;
     requestAnimationFrame(() => this.render(settings));
   }
@@ -175,15 +188,24 @@ export class LiquidRenderer {
     this.lastAmbientSplat = now;
 
     const drift = Math.sin(now * 0.0002) * 0.36;
+    const pressureX = this.pressureToX();
     this.fluid.splat({
-      x: 0.5 + drift + (Math.random() - 0.5) * 0.24,
+      x: clamp(pressureX + drift * 0.28 + (Math.random() - 0.5) * 0.18, 0.08, 0.92),
       y: 0.12 + Math.random() * 0.76,
-      dx: (Math.random() - 0.5) * (0.7 + settings.turbulence * 0.6),
+      dx: this.pressureBias * 0.65 + (Math.random() - 0.5) * (0.42 + settings.turbulence * 0.36),
       dy: 0.25 + Math.random() * 0.55,
       color: COLORS.core,
       radius: 0.014 + settings.viscosity * 0.008,
       force: 0.16 + settings.turbulence * 0.08,
     });
+  }
+
+  private applyPressure(delta: number): void {
+    this.pressureBias = clamp(this.pressureBias * 0.86 + delta * 0.075, -1, 1);
+  }
+
+  private pressureToX(): number {
+    return clamp(0.5 + this.pressureBias * 0.34, 0.08, 0.92);
   }
 
   private drawField(width: number, height: number, now: number, settings: ScannerSettings): void {
