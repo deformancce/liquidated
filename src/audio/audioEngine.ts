@@ -34,30 +34,14 @@ export class AudioEngine {
     const sizeTone = clamp(Math.log10(trade.size + 1), 3.5, 7);
     const intensity = clamp(trade.size / 1_200_000, 0.012, 0.18);
     this.exciteFluid(trade.side === "buy" ? -0.35 : 0.35, sizeTone, intensity, settings);
-
-    const now = this.context.currentTime;
-    const oscillator = this.context.createOscillator();
-    const gain = this.context.createGain();
-    const pan = this.context.createStereoPanner();
-    const filter = this.context.createBiquadFilter();
-    const base = trade.side === "buy" ? 190 : 128;
-    const timbreLift = settings.timbre * 110;
-    const frequency = base + sizeTone * 28 + timbreLift;
-
-    oscillator.type = settings.timbre > 0.6 ? "triangle" : "sine";
-    oscillator.frequency.setValueAtTime(frequency, now);
-    oscillator.frequency.exponentialRampToValueAtTime(frequency * 0.88, now + 0.32);
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(420 + settings.timbre * 720 + sizeTone * 38, now);
-    filter.Q.value = 0.7 + settings.space * 2;
-    pan.pan.value = trade.side === "buy" ? -0.28 : 0.28;
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(intensity * 0.28, now + 0.035);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
-
-    oscillator.connect(filter).connect(gain).connect(pan).connect(this.master);
-    oscillator.start(now);
-    oscillator.stop(now + 0.62);
+    this.playWaterPing({
+      pan: trade.side === "buy" ? -0.32 : 0.32,
+      sizeTone,
+      intensity: intensity * 1.9,
+      hollow: 0.45 + settings.timbre * 0.45,
+      duration: 0.34,
+      settings,
+    });
   }
 
   playSignal(signal: FlowSignal, settings: ScannerSettings): void {
@@ -65,36 +49,21 @@ export class AudioEngine {
     const now = this.context.currentTime;
     const isCascade = signal.type === "cascadeRisk";
     const isAbsorption = signal.type === "absorptionAsk" || signal.type === "absorptionBid";
-    const oscillator = this.context.createOscillator();
-    const oscillator2 = this.context.createOscillator();
-    const filter = this.context.createBiquadFilter();
-    const gain = this.context.createGain();
-    const pan = this.context.createStereoPanner();
-    const duration = isCascade ? 1.15 : isAbsorption ? 0.82 : 0.58;
-    const base = signal.side === "buy" ? 230 : signal.side === "sell" ? 96 : 156;
 
     this.exciteFluid(signal.side === "buy" ? -0.48 : signal.side === "sell" ? 0.48 : 0, signal.intensity + 4, signal.intensity / 7, settings);
+    this.playWaterPing({
+      pan: signal.side === "buy" ? -0.46 : signal.side === "sell" ? 0.46 : 0,
+      sizeTone: signal.intensity + 4.2,
+      intensity: clamp(signal.intensity / 4.5, 0.18, isCascade ? 1.4 : 0.85),
+      hollow: isAbsorption ? 0.25 : 0.7,
+      duration: isCascade ? 0.82 : isAbsorption ? 0.52 : 0.42,
+      settings,
+      cascade: isCascade,
+    });
 
-    oscillator.type = isCascade ? "sawtooth" : isAbsorption ? "triangle" : "sine";
-    oscillator2.type = "sine";
-    oscillator.frequency.setValueAtTime(base + signal.intensity * 90, now);
-    oscillator.frequency.exponentialRampToValueAtTime(Math.max(44, base * 0.64), now + duration);
-    oscillator2.frequency.setValueAtTime((base + signal.intensity * 52) * 1.505, now);
-    oscillator2.frequency.exponentialRampToValueAtTime(Math.max(66, base * 0.96), now + duration);
-    filter.type = isAbsorption ? "lowpass" : "bandpass";
-    filter.frequency.value = isAbsorption ? 360 + settings.timbre * 720 : 620 + signal.intensity * 190;
-    filter.Q.value = isCascade ? 2.4 : 0.9 + settings.timbre * 2.4;
-    pan.pan.value = signal.side === "buy" ? -0.42 : signal.side === "sell" ? 0.42 : 0;
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(clamp(signal.intensity / 12, 0.015, 0.22) * settings.cascadeIntensity, now + 0.08);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
-    oscillator.connect(filter).connect(gain).connect(pan).connect(this.master);
-    oscillator2.connect(filter);
-    oscillator.start(now);
-    oscillator2.start(now);
-    oscillator.stop(now + duration + 0.04);
-    oscillator2.stop(now + duration + 0.04);
+    if (isCascade) {
+      this.playCascadeWash(settings, now, signal.side === "buy" ? -0.2 : signal.side === "sell" ? 0.2 : 0, signal.intensity);
+    }
   }
 
   private ensureContext(settings: ScannerSettings): void {
@@ -138,6 +107,99 @@ export class AudioEngine {
     oscillator.connect(gain).connect(this.fluidFilter);
     oscillator.start();
     this.fluidFilter.connect(this.fluidGain).connect(this.fluidPan).connect(this.master);
+  }
+
+  private playWaterPing(input: {
+    pan: number;
+    sizeTone: number;
+    intensity: number;
+    hollow: number;
+    duration: number;
+    settings: ScannerSettings;
+    cascade?: boolean;
+  }): void {
+    if (!this.context || !this.master) return;
+    const now = this.context.currentTime;
+    const random = Math.random();
+    const noise = this.context.createBufferSource();
+    const noiseBuffer = this.context.createBuffer(1, Math.floor(this.context.sampleRate * 0.035), this.context.sampleRate);
+    const samples = noiseBuffer.getChannelData(0);
+    for (let index = 0; index < samples.length; index += 1) {
+      samples[index] = (Math.random() * 2 - 1) * Math.exp(-index / (samples.length * 0.18));
+    }
+    noise.buffer = noiseBuffer;
+
+    const pingA = this.context.createBiquadFilter();
+    const pingB = this.context.createBiquadFilter();
+    const highpass = this.context.createBiquadFilter();
+    const body = this.context.createOscillator();
+    const bodyGain = this.context.createGain();
+    const gain = this.context.createGain();
+    const pan = this.context.createStereoPanner();
+
+    const base = 470 + input.sizeTone * 105 + input.settings.timbre * 420 + random * 140;
+    const top = base * (1.72 + input.hollow * 0.42);
+    const amount = clamp(input.intensity, 0.04, input.cascade ? 1.4 : 0.8);
+    const duration = input.duration + random * 0.06;
+
+    highpass.type = "highpass";
+    highpass.frequency.value = 160;
+    pingA.type = "bandpass";
+    pingB.type = "bandpass";
+    pingA.Q.value = 18 + input.hollow * 16;
+    pingB.Q.value = 10 + input.hollow * 12;
+    pingA.frequency.setValueAtTime(base * 0.78, now);
+    pingA.frequency.exponentialRampToValueAtTime(top, now + 0.09 + input.hollow * 0.05);
+    pingA.frequency.exponentialRampToValueAtTime(base * 1.18, now + duration);
+    pingB.frequency.setValueAtTime(base * 1.42, now);
+    pingB.frequency.exponentialRampToValueAtTime(top * 1.26, now + 0.12);
+    pingB.frequency.exponentialRampToValueAtTime(base * 1.08, now + duration);
+
+    body.type = "sine";
+    body.frequency.setValueAtTime(base * 0.46, now);
+    body.frequency.exponentialRampToValueAtTime(base * 0.84, now + 0.16);
+    bodyGain.gain.setValueAtTime(0.0001, now);
+    bodyGain.gain.exponentialRampToValueAtTime(amount * 0.035, now + 0.018);
+    bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + duration * 0.86);
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(amount * 0.18 * input.settings.cascadeIntensity, now + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    pan.pan.setValueAtTime(input.pan + (random - 0.5) * 0.16, now);
+
+    noise.connect(highpass).connect(pingA).connect(pingB).connect(gain).connect(pan).connect(this.master);
+    body.connect(bodyGain).connect(pan);
+    noise.start(now);
+    noise.stop(now + 0.05);
+    body.start(now);
+    body.stop(now + duration);
+  }
+
+  private playCascadeWash(settings: ScannerSettings, now: number, panValue: number, intensity: number): void {
+    if (!this.context || !this.master) return;
+    const noise = this.context.createBufferSource();
+    const buffer = this.context.createBuffer(1, Math.floor(this.context.sampleRate * 0.55), this.context.sampleRate);
+    const samples = buffer.getChannelData(0);
+    for (let index = 0; index < samples.length; index += 1) {
+      samples[index] = (Math.random() * 2 - 1) * Math.exp(-index / (samples.length * 0.62));
+    }
+    noise.buffer = buffer;
+
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    const pan = this.context.createStereoPanner();
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(280 + intensity * 80, now);
+    filter.frequency.exponentialRampToValueAtTime(1200 + intensity * 160, now + 0.26);
+    filter.Q.value = 2.8;
+    pan.pan.value = panValue;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(clamp(intensity / 18, 0.025, 0.18) * settings.cascadeIntensity, now + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.65);
+
+    noise.connect(filter).connect(gain).connect(pan).connect(this.master);
+    noise.start(now);
+    noise.stop(now + 0.7);
   }
 
   private exciteFluid(pan: number, tone: number, intensity: number, settings: ScannerSettings): void {
