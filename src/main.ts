@@ -1,4 +1,5 @@
 import { AudioEngine } from "./audio/audioEngine";
+import { SynthLab } from "./audio/synthLab";
 import { MARKET_CONFIG } from "./config/markets";
 import { DemoFeed } from "./data/demoFeed";
 import { HyperliquidClient } from "./data/hyperliquidClient";
@@ -61,6 +62,10 @@ let settings: ScannerSettings = {
 
 const renderer = new LiquidRenderer(canvas);
 const audio = new AudioEngine();
+const synthLabRoot = document.getElementById("synthLab");
+if (synthLabRoot) {
+  new SynthLab(synthLabRoot);
+}
 const aggregator = new FlowAggregator(settings.market, settings.clusterWindowMs);
 const signals = new SignalEngine(settings.market);
 const demo = new DemoFeed(settings.market, {

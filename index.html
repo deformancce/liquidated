@@ -100,6 +100,81 @@
 
         <ol id="eventTape" class="event-tape" aria-label="Recent flow events"></ol>
       </aside>
+
+      <section id="synthLab" class="synth-lab collapsed" aria-label="Tone.js granular synth lab">
+        <header class="synth-lab-header">
+          <div>
+            <p class="kicker">Tone.js Lab</p>
+            <h2>Granular Sample Synth</h2>
+          </div>
+          <button id="synthLabToggle" type="button">Open</button>
+        </header>
+
+        <div class="synth-lab-body">
+          <div class="sample-row">
+            <label class="file-field">
+              <span>Audio Sample</span>
+              <input id="sampleFile" type="file" accept="audio/*">
+            </label>
+            <div class="transport">
+              <button id="grainPlay" type="button">Play</button>
+              <button id="grainStop" type="button">Stop</button>
+              <button id="grainRestart" type="button">Restart</button>
+            </div>
+          </div>
+          <p id="synthLabStatus" class="synth-status">Load a sample</p>
+
+          <div class="lab-grid">
+            <fieldset>
+              <legend>Granular</legend>
+              <label><span>Grain Size</span><input id="grainSize" data-synth type="range" min="0.02" max="0.6" step="0.01" value="0.12"></label>
+              <label><span>Overlap</span><input id="grainOverlap" data-synth type="range" min="0.005" max="0.3" step="0.005" value="0.06"></label>
+              <label><span>Playback</span><input id="playbackRate" data-synth type="range" min="0.25" max="2.5" step="0.01" value="1"></label>
+              <label><span>Detune</span><input id="grainDetune" data-synth type="range" min="-2400" max="2400" step="10" value="0"></label>
+              <label class="check-row"><span>Reverse</span><input id="grainReverse" data-synth type="checkbox"></label>
+            </fieldset>
+
+            <fieldset>
+              <legend>LFO Effects</legend>
+              <label><span>Filter Cutoff</span><input id="filterCutoff" data-synth type="range" min="80" max="9000" step="10" value="1400"></label>
+              <label><span>Filter Q</span><input id="filterQ" data-synth type="range" min="0.2" max="30" step="0.1" value="8"></label>
+              <label><span>LFO Rate</span><input id="lfoRate" data-synth type="range" min="0.02" max="12" step="0.01" value="0.35"></label>
+              <label><span>LFO Depth</span><input id="lfoDepth" data-synth type="range" min="0" max="5000" step="10" value="500"></label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Effects</legend>
+              <label><span>Pitch Shift</span><input id="pitchShift" data-synth type="range" min="-24" max="24" step="1" value="0"></label>
+              <label><span>Pitch Window</span><input id="pitchWindow" data-synth type="range" min="0.03" max="0.16" step="0.005" value="0.08"></label>
+              <label><span>Delay Time</span><input id="delayTime" data-synth type="range" min="0.02" max="1" step="0.01" value="0.25"></label>
+              <label><span>Delay Feedback</span><input id="delayFeedback" data-synth type="range" min="0" max="0.88" step="0.01" value="0.38"></label>
+              <label><span>Reverb Decay</span><input id="reverbDecay" data-synth type="range" min="0.2" max="12" step="0.1" value="4.5"></label>
+              <label><span>Pre Delay</span><input id="reverbPreDelay" data-synth type="range" min="0" max="0.5" step="0.01" value="0.08"></label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Spatialization</legend>
+              <label><span>X</span><input id="spatialX" data-synth type="range" min="-4" max="4" step="0.1" value="0"></label>
+              <label><span>Y</span><input id="spatialY" data-synth type="range" min="-2" max="2" step="0.1" value="0"></label>
+              <label><span>Z</span><input id="spatialZ" data-synth type="range" min="-6" max="2" step="0.1" value="-0.5"></label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Buses</legend>
+              <label><span>Dry Bus</span><input id="dryBus" data-synth type="range" min="0" max="1" step="0.01" value="0.74"></label>
+              <label><span>Delay Send</span><input id="delaySend" data-synth type="range" min="0" max="1" step="0.01" value="0.18"></label>
+              <label><span>Reverb Send</span><input id="reverbSend" data-synth type="range" min="0" max="1" step="0.01" value="0.28"></label>
+              <label><span>Master</span><input id="labMaster" data-synth type="range" min="0" max="1" step="0.01" value="0.55"></label>
+            </fieldset>
+
+            <fieldset class="preset-fieldset">
+              <legend>Preset</legend>
+              <textarea id="synthPresetOutput" spellcheck="false"></textarea>
+              <button id="copySynthPreset" type="button">Copy Preset</button>
+            </fieldset>
+          </div>
+        </div>
+      </section>
     </main>
 
     <script type="module" src="/src/main.ts"></script>
