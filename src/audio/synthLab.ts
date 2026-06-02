@@ -1,4 +1,5 @@
 import * as Tone from "tone";
+import { GranularEngine } from "./granularEngine";
 
 type LabControl = HTMLInputElement | HTMLSelectElement;
 type StoredPresetMap = Record<string, SynthLabPreset>;
@@ -10,6 +11,11 @@ interface SynthLabPreset {
   playbackRate: number;
   detune: number;
   reverse: boolean;
+  position: number;
+  positionJitter: number;
+  density: number;
+  pitchRandom: number;
+  ampRandom: number;
   pitch: number;
   pitchWindow: number;
   filterCutoff: number;
@@ -36,6 +42,11 @@ const DEFAULT_PRESET: SynthLabPreset = {
   playbackRate: 1,
   detune: 0,
   reverse: false,
+  position: 0.5,
+  positionJitter: 0.12,
+  density: 18,
+  pitchRandom: 0,
+  ampRandom: 0.15,
   pitch: 0,
   pitchWindow: 0.08,
   filterCutoff: 1400,
@@ -59,7 +70,7 @@ const STORAGE_KEY = "liquidated.synthLab.presets";
 
 export class SynthLab {
   private root: HTMLElement;
-  private player: Tone.GrainPlayer | null = null;
+  private player: GranularEngine | null = null;
   private objectUrl: string | null = null;
   private playing = false;
   private restartTimer = 0;
@@ -148,16 +159,17 @@ export class SynthLab {
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
     this.objectUrl = URL.createObjectURL(file);
     this.player?.dispose();
-    this.player = new Tone.GrainPlayer({
-      url: this.objectUrl,
-      loop: true,
-      onload: () => {
+    const buffer = new Tone.ToneAudioBuffer(
+      this.objectUrl,
+      () => {
+        this.player = new GranularEngine();
+        this.player.load(buffer);
+        this.connectPlayer();
         this.setStatus(file.name);
         this.syncFromControls();
       },
-      onerror: (error) => this.setStatus(error.message),
-    });
-    this.connectPlayer();
+      (error) => this.setStatus(error.message)
+    );
   }
 
   private connectPlayer(): void {
@@ -251,11 +263,18 @@ export class SynthLab {
     this.spatial.setPosition(preset.spatialX, preset.spatialY, preset.spatialZ);
 
     if (this.player) {
-      this.player.grainSize = preset.grainSize;
-      this.player.overlap = preset.overlap;
-      this.player.playbackRate = Math.max(0.05, preset.playbackRate);
-      this.player.detune = preset.detune;
-      this.player.reverse = preset.reverse;
+      this.player.setSettings({
+        grainSize: preset.grainSize,
+        overlap: preset.overlap,
+        playbackRate: Math.max(0.05, preset.playbackRate),
+        detune: preset.detune,
+        reverse: preset.reverse,
+        position: preset.position,
+        positionJitter: preset.positionJitter,
+        density: preset.density,
+        pitchRandom: preset.pitchRandom,
+        ampRandom: preset.ampRandom,
+      });
     }
 
     if (chainChanged) {
@@ -307,7 +326,19 @@ export class SynthLab {
   }
 
   private isGranularControl(id: string): boolean {
-    return ["grainSize", "grainOverlap", "playbackRate", "grainDetune", "grainReverse", "fullChain"].includes(id);
+    return [
+      "grainSize",
+      "grainOverlap",
+      "playbackRate",
+      "grainDetune",
+      "grainReverse",
+      "grainPosition",
+      "grainJitter",
+      "grainDensity",
+      "pitchRandom",
+      "ampRandom",
+      "fullChain",
+    ].includes(id);
   }
 
   private scheduleAudibleRestart(): void {
@@ -315,7 +346,7 @@ export class SynthLab {
     window.clearTimeout(this.restartTimer);
     this.restartTimer = window.setTimeout(() => {
       this.player?.stop();
-      this.player?.start("+0.01");
+      this.player?.start();
       this.setStatus("Granular settings applied");
     }, 80);
   }
@@ -327,10 +358,8 @@ export class SynthLab {
       this.objectUrl = null;
     }
     this.player?.dispose();
-    this.player = new Tone.GrainPlayer({
-      url: this.createWaterSeedBuffer(),
-      loop: true,
-    });
+    this.player = new GranularEngine();
+    this.player.load(this.createWaterSeedBuffer());
     this.connectPlayer();
     this.syncFromControls();
     this.setStatus("Generated water seed loaded");
@@ -375,6 +404,11 @@ export class SynthLab {
       playbackRate: this.number("playbackRate"),
       detune: this.number("grainDetune"),
       reverse: this.input("grainReverse").checked,
+      position: this.number("grainPosition"),
+      positionJitter: this.number("grainJitter"),
+      density: this.number("grainDensity"),
+      pitchRandom: this.number("pitchRandom"),
+      ampRandom: this.number("ampRandom"),
       pitch: this.number("pitchShift"),
       pitchWindow: this.number("pitchWindow"),
       filterCutoff: this.number("filterCutoff"),
@@ -407,6 +441,11 @@ export class SynthLab {
     this.setInputValue("playbackRate", clean.playbackRate);
     this.setInputValue("grainDetune", clean.detune);
     this.input("grainReverse").checked = clean.reverse;
+    this.setInputValue("grainPosition", clean.position);
+    this.setInputValue("grainJitter", clean.positionJitter);
+    this.setInputValue("grainDensity", clean.density);
+    this.setInputValue("pitchRandom", clean.pitchRandom);
+    this.setInputValue("ampRandom", clean.ampRandom);
     this.setInputValue("pitchShift", clean.pitch);
     this.setInputValue("pitchWindow", clean.pitchWindow);
     this.setInputValue("filterCutoff", clean.filterCutoff);
@@ -505,6 +544,11 @@ export class SynthLab {
       playbackRate: this.clampPresetValue(preset.playbackRate, 0.25, 2.5, DEFAULT_PRESET.playbackRate),
       detune: this.clampPresetValue(preset.detune, -2400, 2400, DEFAULT_PRESET.detune),
       reverse: Boolean(preset.reverse),
+      position: this.clampPresetValue(preset.position, 0, 1, DEFAULT_PRESET.position),
+      positionJitter: this.clampPresetValue(preset.positionJitter, 0, 1, DEFAULT_PRESET.positionJitter),
+      density: this.clampPresetValue(preset.density, 1, 80, DEFAULT_PRESET.density),
+      pitchRandom: this.clampPresetValue(preset.pitchRandom, 0, 2400, DEFAULT_PRESET.pitchRandom),
+      ampRandom: this.clampPresetValue(preset.ampRandom, 0, 1, DEFAULT_PRESET.ampRandom),
       pitch: this.clampPresetValue(preset.pitch, -24, 24, DEFAULT_PRESET.pitch),
       pitchWindow: this.clampPresetValue(preset.pitchWindow, 0.03, 0.16, DEFAULT_PRESET.pitchWindow),
       filterCutoff: this.clampPresetValue(preset.filterCutoff, 80, 9000, DEFAULT_PRESET.filterCutoff),
