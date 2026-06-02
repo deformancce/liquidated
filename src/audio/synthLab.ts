@@ -57,10 +57,9 @@ export class SynthLab {
   private player: Tone.GrainPlayer | null = null;
   private objectUrl: string | null = null;
   private playing = false;
+  private restartTimer = 0;
   private master = new Tone.Gain(DEFAULT_PRESET.master).toDestination();
   private dryBus = new Tone.Gain(DEFAULT_PRESET.dryBus).connect(this.master);
-  private delaySend = new Tone.Gain(DEFAULT_PRESET.delaySend);
-  private reverbSend = new Tone.Gain(DEFAULT_PRESET.reverbSend);
   private pitchShift = new Tone.PitchShift({
     pitch: DEFAULT_PRESET.pitch,
     windowSize: DEFAULT_PRESET.pitchWindow,
@@ -90,18 +89,16 @@ export class SynthLab {
   private delay = new Tone.PingPongDelay({
     delayTime: DEFAULT_PRESET.delayTime,
     feedback: DEFAULT_PRESET.delayFeedback,
-    wet: 1,
-  }).connect(this.master);
+    wet: DEFAULT_PRESET.delaySend,
+  });
   private reverb = new Tone.Reverb({
     decay: DEFAULT_PRESET.reverbDecay,
     preDelay: DEFAULT_PRESET.reverbPreDelay,
-    wet: 1,
-  }).connect(this.master);
+    wet: DEFAULT_PRESET.reverbSend,
+  });
 
   constructor(root: HTMLElement) {
     this.root = root;
-    this.delaySend.connect(this.delay);
-    this.reverbSend.connect(this.reverb);
     this.lfo.connect(this.lfoFilter.frequency);
     this.bind();
     this.syncFromControls();
@@ -121,8 +118,8 @@ export class SynthLab {
     this.button("copySynthPreset").addEventListener("click", () => this.copyPreset());
 
     for (const control of this.root.querySelectorAll<LabControl>("input[data-synth], select[data-synth]")) {
-      control.addEventListener("input", () => this.syncFromControls());
-      control.addEventListener("change", () => this.syncFromControls());
+      control.addEventListener("input", () => this.syncFromControls(control.id));
+      control.addEventListener("change", () => this.syncFromControls(control.id));
     }
   }
 
@@ -147,10 +144,11 @@ export class SynthLab {
   private connectPlayer(): void {
     if (!this.player) return;
     this.player.disconnect();
-    this.player.chain(this.pitchShift, this.lfoFilter, this.spatial);
-    this.spatial.connect(this.dryBus);
-    this.spatial.connect(this.delaySend);
-    this.spatial.connect(this.reverbSend);
+    this.delay.disconnect();
+    this.reverb.disconnect();
+    this.spatial.disconnect();
+    this.player.chain(this.pitchShift, this.lfoFilter, this.delay, this.reverb, this.spatial, this.dryBus);
+    this.setStatus("Serial: Grain -> Pitch -> LFO Filter -> Delay -> Reverb -> 3D");
   }
 
   private async play(): Promise<void> {
@@ -180,12 +178,10 @@ export class SynthLab {
     this.setTransportState(true);
   }
 
-  private syncFromControls(): void {
+  private syncFromControls(changedId = ""): void {
     const preset = this.readPreset();
     this.master.gain.rampTo(preset.master, 0.05);
     this.dryBus.gain.rampTo(preset.dryBus, 0.05);
-    this.delaySend.gain.rampTo(preset.delaySend, 0.05);
-    this.reverbSend.gain.rampTo(preset.reverbSend, 0.05);
     this.pitchShift.pitch = preset.pitch;
     this.pitchShift.windowSize = preset.pitchWindow;
     this.lfoFilter.frequency.rampTo(preset.filterCutoff, 0.05);
@@ -195,8 +191,10 @@ export class SynthLab {
     this.lfo.max = preset.filterCutoff + preset.lfoDepth;
     this.delay.delayTime.rampTo(preset.delayTime, 0.05);
     this.delay.feedback.rampTo(preset.delayFeedback, 0.05);
+    this.delay.wet.rampTo(preset.delaySend, 0.05);
     this.reverb.decay = preset.reverbDecay;
     this.reverb.preDelay = preset.reverbPreDelay;
+    this.reverb.wet.rampTo(preset.reverbSend, 0.05);
     this.spatial.setPosition(preset.spatialX, preset.spatialY, preset.spatialZ);
 
     if (this.player) {
@@ -207,7 +205,24 @@ export class SynthLab {
       this.player.reverse = preset.reverse;
     }
 
+    if (this.isGranularControl(changedId)) {
+      this.scheduleAudibleRestart();
+    }
+
     this.writePreset(preset);
+  }
+
+  private isGranularControl(id: string): boolean {
+    return ["grainSize", "grainOverlap", "playbackRate", "grainDetune", "grainReverse"].includes(id);
+  }
+
+  private scheduleAudibleRestart(): void {
+    if (!this.player || !this.playing) return;
+    window.clearTimeout(this.restartTimer);
+    this.restartTimer = window.setTimeout(() => {
+      this.player?.restart();
+      this.setStatus("Granular settings applied");
+    }, 120);
   }
 
   private readPreset(): SynthLabPreset {
