@@ -21,10 +21,10 @@
           <label class="field">
             <span>Pair</span>
             <select id="symbolSelect">
-              <option value="btcusdt" selected>BTCUSDT</option>
-              <option value="ethusdt">ETHUSDT</option>
-              <option value="solusdt">SOLUSDT</option>
-              <option value="bnbusdt">BNBUSDT</option>
+              <option value="BTC" selected>BTC</option>
+              <option value="ETH">ETH</option>
+              <option value="SOL">SOL</option>
+              <option value="HYPE">HYPE</option>
             </select>
           </label>
 
@@ -81,12 +81,20 @@
             <input id="sensitivity" type="range" min="0.4" max="2.5" step="0.1" value="1.2">
           </label>
           <label>
-            <span>Min Size</span>
-            <input id="minSize" type="range" min="0" max="250000" step="5000" value="15000">
+            <span>Min Print</span>
+            <input id="minSize" type="range" min="0" max="500000" step="5000" value="150000">
           </label>
           <label>
             <span>Volume</span>
             <input id="volume" type="range" min="0" max="0.9" step="0.03" value="0.28">
+          </label>
+          <label>
+            <span>Timbre</span>
+            <input id="timbre" type="range" min="0" max="1" step="0.05" value="0.45">
+          </label>
+          <label>
+            <span>Space</span>
+            <input id="space" type="range" min="0" max="1" step="0.05" value="0.35">
           </label>
         </div>
 
@@ -94,6 +102,6 @@
       </aside>
     </main>
 
-    <script src="app.js"></script>
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
