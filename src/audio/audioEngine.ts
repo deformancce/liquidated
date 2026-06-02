@@ -6,6 +6,10 @@ export class AudioEngine {
   private master: GainNode | null = null;
   private delay: DelayNode | null = null;
   private feedback: GainNode | null = null;
+  private longVerb: DelayNode | null = null;
+  private longVerbFeedback: GainNode | null = null;
+  private longVerbFilter: BiquadFilterNode | null = null;
+  private longVerbInput: GainNode | null = null;
   private fluidGain: GainNode | null = null;
   private fluidFilter: BiquadFilterNode | null = null;
   private fluidPan: StereoPannerNode | null = null;
@@ -23,6 +27,8 @@ export class AudioEngine {
   setSettings(settings: ScannerSettings): void {
     if (this.master) this.master.gain.value = settings.volume;
     if (this.feedback) this.feedback.gain.value = settings.space * 0.42;
+    if (this.longVerbFeedback) this.longVerbFeedback.gain.value = 0.34 + settings.space * 0.44;
+    if (this.longVerbFilter) this.longVerbFilter.frequency.value = 950 + settings.timbre * 1_200;
     if (this.fluidFilter && this.context) {
       this.fluidFilter.frequency.setTargetAtTime(220 + settings.timbre * 520, this.context.currentTime, 0.2);
       this.fluidFilter.Q.setTargetAtTime(0.8 + settings.space * 2.2, this.context.currentTime, 0.2);
@@ -40,6 +46,7 @@ export class AudioEngine {
       intensity: intensity * 1.9,
       hollow: 0.45 + settings.timbre * 0.45,
       duration: 0.34,
+      longReverb: clamp((trade.size - settings.minPrintSize * 4) / (settings.minPrintSize * 18), 0, 1),
       settings,
     });
   }
@@ -57,6 +64,7 @@ export class AudioEngine {
       intensity: clamp(signal.intensity / 4.5, 0.18, isCascade ? 1.4 : 0.85),
       hollow: isAbsorption ? 0.25 : 0.7,
       duration: isCascade ? 0.82 : isAbsorption ? 0.52 : 0.42,
+      longReverb: isCascade ? 1 : clamp(signal.intensity / 3.8, 0, 0.85),
       settings,
       cascade: isCascade,
     });
@@ -73,6 +81,10 @@ export class AudioEngine {
     this.master = this.context.createGain();
     this.delay = this.context.createDelay(0.7);
     this.feedback = this.context.createGain();
+    this.longVerb = this.context.createDelay(1.6);
+    this.longVerbFeedback = this.context.createGain();
+    this.longVerbFilter = this.context.createBiquadFilter();
+    this.longVerbInput = this.context.createGain();
     this.fluidGain = this.context.createGain();
     this.fluidFilter = this.context.createBiquadFilter();
     this.fluidPan = this.context.createStereoPanner();
@@ -80,6 +92,12 @@ export class AudioEngine {
     this.master.gain.value = settings.volume;
     this.delay.delayTime.value = 0.18;
     this.feedback.gain.value = settings.space * 0.42;
+    this.longVerb.delayTime.value = 0.56;
+    this.longVerbFeedback.gain.value = 0.34 + settings.space * 0.44;
+    this.longVerbFilter.type = "lowpass";
+    this.longVerbFilter.frequency.value = 950 + settings.timbre * 1_200;
+    this.longVerbFilter.Q.value = 0.7;
+    this.longVerbInput.gain.value = 0;
     this.fluidGain.gain.value = 0.0001;
     this.fluidFilter.type = "lowpass";
     this.fluidFilter.frequency.value = 260 + settings.timbre * 520;
@@ -95,6 +113,11 @@ export class AudioEngine {
     this.delay.connect(this.feedback);
     this.feedback.connect(this.delay);
     this.delay.connect(this.context.destination);
+    this.longVerbInput.connect(this.longVerb);
+    this.longVerb.connect(this.longVerbFilter);
+    this.longVerbFilter.connect(this.longVerbFeedback);
+    this.longVerbFeedback.connect(this.longVerb);
+    this.longVerbFilter.connect(this.context.destination);
   }
 
   private createFluidOscillator(frequency: number, type: OscillatorType): void {
@@ -116,6 +139,7 @@ export class AudioEngine {
     hollow: number;
     duration: number;
     settings: ScannerSettings;
+    longReverb: number;
     cascade?: boolean;
   }): void {
     if (!this.context || !this.master) return;
@@ -135,6 +159,7 @@ export class AudioEngine {
     const body = this.context.createOscillator();
     const bodyGain = this.context.createGain();
     const gain = this.context.createGain();
+    const sendGain = this.context.createGain();
     const pan = this.context.createStereoPanner();
 
     const base = 470 + input.sizeTone * 105 + input.settings.timbre * 420 + random * 140;
@@ -165,10 +190,15 @@ export class AudioEngine {
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(amount * 0.18 * input.settings.cascadeIntensity, now + 0.012);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    sendGain.gain.setValueAtTime(clamp(input.longReverb, 0, 1) * (0.16 + input.settings.space * 0.24), now);
+    sendGain.gain.exponentialRampToValueAtTime(0.0001, now + duration + 0.22);
     pan.pan.setValueAtTime(input.pan + (random - 0.5) * 0.16, now);
 
     noise.connect(highpass).connect(pingA).connect(pingB).connect(gain).connect(pan).connect(this.master);
+    gain.connect(sendGain);
+    if (this.longVerbInput) sendGain.connect(this.longVerbInput);
     body.connect(bodyGain).connect(pan);
+    bodyGain.connect(sendGain);
     noise.start(now);
     noise.stop(now + 0.05);
     body.start(now);
