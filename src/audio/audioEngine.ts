@@ -1,42 +1,68 @@
+import * as Tone from "tone";
 import { clamp } from "../utils/format";
 import type { FlowSignal, ScannerSettings, TradeEvent } from "../types";
 
+interface WaterPingInput {
+  pan: number;
+  sizeTone: number;
+  intensity: number;
+  hollow: number;
+  duration: number;
+  longReverb: number;
+  settings: ScannerSettings;
+  cascade?: boolean;
+}
+
+const WATER_PRESET = {
+  dropPitch: 520,
+  pitchSpread: 155,
+  pitchSweep: 1.86,
+  resonance: 26,
+  secondResonance: 18,
+  hollow: 0.68,
+  clickDecay: 0.045,
+  pingDecay: 0.38,
+  bodyAmount: 0.035,
+  dryGain: 0.18,
+  shortDelayTime: 0.17,
+  shortDelayFeedback: 0.34,
+  longReverbDecay: 5.2,
+  longReverbPreDelay: 0.08,
+  longSend: 0.36,
+  droneBase: 0.028,
+};
+
 export class AudioEngine {
-  private context: AudioContext | null = null;
-  private master: GainNode | null = null;
-  private delay: DelayNode | null = null;
-  private feedback: GainNode | null = null;
-  private longVerb: DelayNode | null = null;
-  private longVerbFeedback: GainNode | null = null;
-  private longVerbFilter: BiquadFilterNode | null = null;
-  private longVerbInput: GainNode | null = null;
-  private fluidGain: GainNode | null = null;
-  private fluidFilter: BiquadFilterNode | null = null;
-  private fluidPan: StereoPannerNode | null = null;
   private enabled = false;
+  private ready = false;
+  private master: Tone.Gain | null = null;
+  private shortDelay: Tone.PingPongDelay | null = null;
+  private longReverb: Tone.Reverb | null = null;
+  private longSend: Tone.Gain | null = null;
+  private droneGain: Tone.Gain | null = null;
+  private droneFilter: Tone.Filter | null = null;
+  private dronePan: Tone.Panner | null = null;
+  private droneOscillators: Tone.Oscillator[] = [];
 
   async toggle(settings: ScannerSettings): Promise<boolean> {
-    this.ensureContext(settings);
-    if (!this.context) return false;
-    if (this.context.state === "suspended") await this.context.resume();
+    await this.ensureTone(settings);
     this.enabled = !this.enabled;
-    this.setFluidLevel(this.enabled ? 0.035 : 0.0001, 0.35);
+    this.setDroneLevel(this.enabled ? WATER_PRESET.droneBase : 0.0001, 0.35);
     return this.enabled;
   }
 
   setSettings(settings: ScannerSettings): void {
-    if (this.master) this.master.gain.value = settings.volume;
-    if (this.feedback) this.feedback.gain.value = settings.space * 0.42;
-    if (this.longVerbFeedback) this.longVerbFeedback.gain.value = 0.34 + settings.space * 0.44;
-    if (this.longVerbFilter) this.longVerbFilter.frequency.value = 950 + settings.timbre * 1_200;
-    if (this.fluidFilter && this.context) {
-      this.fluidFilter.frequency.setTargetAtTime(220 + settings.timbre * 520, this.context.currentTime, 0.2);
-      this.fluidFilter.Q.setTargetAtTime(0.8 + settings.space * 2.2, this.context.currentTime, 0.2);
-    }
+    if (!this.ready) return;
+    this.master?.gain.rampTo(settings.volume, 0.08);
+    this.shortDelay?.feedback.rampTo(WATER_PRESET.shortDelayFeedback + settings.space * 0.22, 0.12);
+    this.shortDelay?.wet.rampTo(0.14 + settings.space * 0.22, 0.12);
+    this.longReverb?.wet.rampTo(0.18 + settings.space * 0.36, 0.2);
+    this.droneFilter?.frequency.rampTo(220 + settings.timbre * 640, 0.2);
+    this.droneFilter?.Q.rampTo(0.9 + settings.space * 2.4, 0.2);
   }
 
   playTrade(trade: TradeEvent, settings: ScannerSettings): void {
-    if (!this.enabled || !this.context || !this.master) return;
+    if (!this.enabled || !this.ready) return;
     const sizeTone = clamp(Math.log10(trade.size + 1), 3.5, 7);
     const intensity = clamp(trade.size / 1_200_000, 0.012, 0.18);
     this.exciteFluid(trade.side === "buy" ? -0.35 : 0.35, sizeTone, intensity, settings);
@@ -52,8 +78,7 @@ export class AudioEngine {
   }
 
   playSignal(signal: FlowSignal, settings: ScannerSettings): void {
-    if (!this.enabled || !this.context || !this.master) return;
-    const now = this.context.currentTime;
+    if (!this.enabled || !this.ready) return;
     const isCascade = signal.type === "cascadeRisk";
     const isAbsorption = signal.type === "absorptionAsk" || signal.type === "absorptionBid";
 
@@ -70,186 +95,169 @@ export class AudioEngine {
     });
 
     if (isCascade) {
-      this.playCascadeWash(settings, now, signal.side === "buy" ? -0.2 : signal.side === "sell" ? 0.2 : 0, signal.intensity);
+      this.playCascadeWash(settings, signal.side === "buy" ? -0.2 : signal.side === "sell" ? 0.2 : 0, signal.intensity);
     }
   }
 
-  private ensureContext(settings: ScannerSettings): void {
-    if (this.context) return;
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    this.context = new AudioContextClass();
-    this.master = this.context.createGain();
-    this.delay = this.context.createDelay(0.7);
-    this.feedback = this.context.createGain();
-    this.longVerb = this.context.createDelay(1.6);
-    this.longVerbFeedback = this.context.createGain();
-    this.longVerbFilter = this.context.createBiquadFilter();
-    this.longVerbInput = this.context.createGain();
-    this.fluidGain = this.context.createGain();
-    this.fluidFilter = this.context.createBiquadFilter();
-    this.fluidPan = this.context.createStereoPanner();
+  private async ensureTone(settings: ScannerSettings): Promise<void> {
+    if (this.ready) return;
+    await Tone.start();
 
-    this.master.gain.value = settings.volume;
-    this.delay.delayTime.value = 0.18;
-    this.feedback.gain.value = settings.space * 0.42;
-    this.longVerb.delayTime.value = 0.56;
-    this.longVerbFeedback.gain.value = 0.34 + settings.space * 0.44;
-    this.longVerbFilter.type = "lowpass";
-    this.longVerbFilter.frequency.value = 950 + settings.timbre * 1_200;
-    this.longVerbFilter.Q.value = 0.7;
-    this.longVerbInput.gain.value = 0;
-    this.fluidGain.gain.value = 0.0001;
-    this.fluidFilter.type = "lowpass";
-    this.fluidFilter.frequency.value = 260 + settings.timbre * 520;
-    this.fluidFilter.Q.value = 0.8 + settings.space * 2.2;
-    this.fluidPan.pan.value = 0;
+    this.master = new Tone.Gain(settings.volume).toDestination();
+    this.shortDelay = new Tone.PingPongDelay({
+      delayTime: WATER_PRESET.shortDelayTime,
+      feedback: WATER_PRESET.shortDelayFeedback + settings.space * 0.22,
+      wet: 0.14 + settings.space * 0.22,
+    }).connect(this.master);
+    this.longReverb = new Tone.Reverb({
+      decay: WATER_PRESET.longReverbDecay,
+      preDelay: WATER_PRESET.longReverbPreDelay,
+      wet: 0.18 + settings.space * 0.36,
+    }).connect(this.master);
+    this.longSend = new Tone.Gain(0).connect(this.longReverb);
+    this.droneGain = new Tone.Gain(0.0001);
+    this.droneFilter = new Tone.Filter({
+      type: "lowpass",
+      frequency: 220 + settings.timbre * 640,
+      Q: 0.9 + settings.space * 2.4,
+      rolloff: -24,
+    });
+    this.dronePan = new Tone.Panner(0).connect(this.master);
 
-    this.createFluidOscillator(61.7, "sine");
-    this.createFluidOscillator(92.5, "triangle");
-    this.createFluidOscillator(123.4, "sine");
-
-    this.master.connect(this.context.destination);
-    this.master.connect(this.delay);
-    this.delay.connect(this.feedback);
-    this.feedback.connect(this.delay);
-    this.delay.connect(this.context.destination);
-    this.longVerbInput.connect(this.longVerb);
-    this.longVerb.connect(this.longVerbFilter);
-    this.longVerbFilter.connect(this.longVerbFeedback);
-    this.longVerbFeedback.connect(this.longVerb);
-    this.longVerbFilter.connect(this.context.destination);
+    this.droneGain.chain(this.droneFilter, this.dronePan);
+    this.createDroneOscillator(61.7, "sine");
+    this.createDroneOscillator(92.5, "triangle");
+    this.createDroneOscillator(123.4, "sine");
+    this.ready = true;
   }
 
-  private createFluidOscillator(frequency: number, type: OscillatorType): void {
-    if (!this.context || !this.fluidGain || !this.fluidFilter || !this.fluidPan || !this.master) return;
-    const oscillator = this.context.createOscillator();
-    const gain = this.context.createGain();
-    oscillator.type = type;
-    oscillator.frequency.value = frequency;
-    gain.gain.value = type === "triangle" ? 0.32 : 0.22;
-    oscillator.connect(gain).connect(this.fluidFilter);
+  private createDroneOscillator(frequency: number, type: "sine" | "triangle"): void {
+    if (!this.droneGain) return;
+    const oscillator = new Tone.Oscillator({ frequency, type, volume: type === "triangle" ? -18 : -22 }).connect(this.droneGain);
     oscillator.start();
-    this.fluidFilter.connect(this.fluidGain).connect(this.fluidPan).connect(this.master);
+    this.droneOscillators.push(oscillator);
   }
 
-  private playWaterPing(input: {
-    pan: number;
-    sizeTone: number;
-    intensity: number;
-    hollow: number;
-    duration: number;
-    settings: ScannerSettings;
-    longReverb: number;
-    cascade?: boolean;
-  }): void {
-    if (!this.context || !this.master) return;
-    const now = this.context.currentTime;
+  private playWaterPing(input: WaterPingInput): void {
+    if (!this.master || !this.shortDelay || !this.longSend) return;
+    const now = Tone.now();
     const random = Math.random();
-    const noise = this.context.createBufferSource();
-    const noiseBuffer = this.context.createBuffer(1, Math.floor(this.context.sampleRate * 0.035), this.context.sampleRate);
-    const samples = noiseBuffer.getChannelData(0);
-    for (let index = 0; index < samples.length; index += 1) {
-      samples[index] = (Math.random() * 2 - 1) * Math.exp(-index / (samples.length * 0.18));
-    }
-    noise.buffer = noiseBuffer;
-
-    const pingA = this.context.createBiquadFilter();
-    const pingB = this.context.createBiquadFilter();
-    const highpass = this.context.createBiquadFilter();
-    const body = this.context.createOscillator();
-    const bodyGain = this.context.createGain();
-    const gain = this.context.createGain();
-    const sendGain = this.context.createGain();
-    const pan = this.context.createStereoPanner();
-
-    const base = 470 + input.sizeTone * 105 + input.settings.timbre * 420 + random * 140;
-    const top = base * (1.72 + input.hollow * 0.42);
     const amount = clamp(input.intensity, 0.04, input.cascade ? 1.4 : 0.8);
+    const base = WATER_PRESET.dropPitch + input.sizeTone * WATER_PRESET.pitchSpread + input.settings.timbre * 420 + random * 130;
+    const top = base * (WATER_PRESET.pitchSweep + input.hollow * 0.42);
     const duration = input.duration + random * 0.06;
+    const panValue = input.pan + (random - 0.5) * 0.16;
 
-    highpass.type = "highpass";
-    highpass.frequency.value = 160;
-    pingA.type = "bandpass";
-    pingB.type = "bandpass";
-    pingA.Q.value = 18 + input.hollow * 16;
-    pingB.Q.value = 10 + input.hollow * 12;
-    pingA.frequency.setValueAtTime(base * 0.78, now);
+    const pan = new Tone.Panner(panValue);
+    const pingA = new Tone.Filter({
+      type: "bandpass",
+      frequency: base * 0.78,
+      Q: WATER_PRESET.resonance + input.hollow * 16,
+      rolloff: -24,
+    });
+    const pingB = new Tone.Filter({
+      type: "bandpass",
+      frequency: base * 1.42,
+      Q: WATER_PRESET.secondResonance + input.hollow * 12,
+      rolloff: -12,
+    });
+    const highpass = new Tone.Filter({ type: "highpass", frequency: 160, rolloff: -12 });
+    const dropGain = new Tone.Gain(0);
+    const longGain = new Tone.Gain(clamp(input.longReverb, 0, 1) * WATER_PRESET.longSend * (0.65 + input.settings.space));
+    const body = new Tone.Oscillator({ type: "sine", frequency: base * 0.46 });
+    const bodyGain = new Tone.Gain(0);
+    const noise = new Tone.Noise("white");
+
+    noise.chain(highpass, pingA, pingB, dropGain, pan);
+    body.connect(bodyGain);
+    bodyGain.connect(pan);
+    pan.connect(this.master);
+    pan.connect(this.shortDelay);
+    dropGain.connect(longGain);
+    bodyGain.connect(longGain);
+    longGain.connect(this.longSend);
+
     pingA.frequency.exponentialRampToValueAtTime(top, now + 0.09 + input.hollow * 0.05);
     pingA.frequency.exponentialRampToValueAtTime(base * 1.18, now + duration);
-    pingB.frequency.setValueAtTime(base * 1.42, now);
     pingB.frequency.exponentialRampToValueAtTime(top * 1.26, now + 0.12);
     pingB.frequency.exponentialRampToValueAtTime(base * 1.08, now + duration);
-
-    body.type = "sine";
-    body.frequency.setValueAtTime(base * 0.46, now);
     body.frequency.exponentialRampToValueAtTime(base * 0.84, now + 0.16);
+
+    dropGain.gain.setValueAtTime(0.0001, now);
+    dropGain.gain.exponentialRampToValueAtTime(amount * WATER_PRESET.dryGain * input.settings.cascadeIntensity, now + 0.012);
+    dropGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
     bodyGain.gain.setValueAtTime(0.0001, now);
-    bodyGain.gain.exponentialRampToValueAtTime(amount * 0.035, now + 0.018);
+    bodyGain.gain.exponentialRampToValueAtTime(amount * WATER_PRESET.bodyAmount, now + 0.018);
     bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + duration * 0.86);
+    longGain.gain.exponentialRampToValueAtTime(0.0001, now + duration + 0.22);
 
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(amount * 0.18 * input.settings.cascadeIntensity, now + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    sendGain.gain.setValueAtTime(clamp(input.longReverb, 0, 1) * (0.16 + input.settings.space * 0.24), now);
-    sendGain.gain.exponentialRampToValueAtTime(0.0001, now + duration + 0.22);
-    pan.pan.setValueAtTime(input.pan + (random - 0.5) * 0.16, now);
-
-    noise.connect(highpass).connect(pingA).connect(pingB).connect(gain).connect(pan).connect(this.master);
-    gain.connect(sendGain);
-    if (this.longVerbInput) sendGain.connect(this.longVerbInput);
-    body.connect(bodyGain).connect(pan);
-    bodyGain.connect(sendGain);
     noise.start(now);
-    noise.stop(now + 0.05);
+    noise.stop(now + WATER_PRESET.clickDecay);
     body.start(now);
     body.stop(now + duration);
+
+    window.setTimeout(() => {
+      noise.dispose();
+      body.dispose();
+      bodyGain.dispose();
+      dropGain.dispose();
+      highpass.dispose();
+      pingA.dispose();
+      pingB.dispose();
+      pan.dispose();
+      longGain.dispose();
+    }, (duration + 1.2) * 1000);
   }
 
-  private playCascadeWash(settings: ScannerSettings, now: number, panValue: number, intensity: number): void {
-    if (!this.context || !this.master) return;
-    const noise = this.context.createBufferSource();
-    const buffer = this.context.createBuffer(1, Math.floor(this.context.sampleRate * 0.55), this.context.sampleRate);
-    const samples = buffer.getChannelData(0);
-    for (let index = 0; index < samples.length; index += 1) {
-      samples[index] = (Math.random() * 2 - 1) * Math.exp(-index / (samples.length * 0.62));
-    }
-    noise.buffer = buffer;
+  private playCascadeWash(settings: ScannerSettings, panValue: number, intensity: number): void {
+    if (!this.master || !this.longSend) return;
+    const now = Tone.now();
+    const noise = new Tone.Noise("brown");
+    const filter = new Tone.Filter({
+      type: "bandpass",
+      frequency: 280 + intensity * 80,
+      Q: 2.8,
+      rolloff: -24,
+    });
+    const gain = new Tone.Gain(0);
+    const pan = new Tone.Panner(panValue);
 
-    const filter = this.context.createBiquadFilter();
-    const gain = this.context.createGain();
-    const pan = this.context.createStereoPanner();
-    filter.type = "bandpass";
-    filter.frequency.setValueAtTime(280 + intensity * 80, now);
+    noise.chain(filter, gain, pan);
+    pan.connect(this.master);
+    pan.connect(this.longSend);
     filter.frequency.exponentialRampToValueAtTime(1200 + intensity * 160, now + 0.26);
-    filter.Q.value = 2.8;
-    pan.pan.value = panValue;
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(clamp(intensity / 18, 0.025, 0.18) * settings.cascadeIntensity, now + 0.08);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.65);
 
-    noise.connect(filter).connect(gain).connect(pan).connect(this.master);
     noise.start(now);
     noise.stop(now + 0.7);
+    window.setTimeout(() => {
+      noise.dispose();
+      filter.dispose();
+      gain.dispose();
+      pan.dispose();
+    }, 1400);
   }
 
   private exciteFluid(pan: number, tone: number, intensity: number, settings: ScannerSettings): void {
-    if (!this.context || !this.fluidGain || !this.fluidFilter || !this.fluidPan) return;
-    const now = this.context.currentTime;
+    if (!this.droneGain || !this.droneFilter || !this.dronePan) return;
+    const now = Tone.now();
     const lift = clamp(tone / 7, 0.35, 1.2);
-    const targetGain = clamp(0.035 + intensity * 0.34, 0.035, 0.18) * settings.cascadeIntensity;
+    const targetGain = clamp(WATER_PRESET.droneBase + intensity * 0.34, WATER_PRESET.droneBase, 0.18) * settings.cascadeIntensity;
     const targetFrequency = 180 + lift * 520 + settings.timbre * 740;
 
-    this.fluidGain.gain.cancelScheduledValues(now);
-    this.fluidGain.gain.setTargetAtTime(targetGain, now, 0.045);
-    this.fluidGain.gain.setTargetAtTime(this.enabled ? 0.035 : 0.0001, now + 0.18, 0.55);
-    this.fluidFilter.frequency.setTargetAtTime(targetFrequency, now, 0.055);
-    this.fluidFilter.frequency.setTargetAtTime(220 + settings.timbre * 520, now + 0.28, 0.65);
-    this.fluidPan.pan.setTargetAtTime(pan, now, 0.08);
-    this.fluidPan.pan.setTargetAtTime(0, now + 0.28, 0.9);
+    this.droneGain.gain.cancelScheduledValues(now);
+    this.droneGain.gain.setTargetAtTime(targetGain, now, 0.045);
+    this.droneGain.gain.setTargetAtTime(this.enabled ? WATER_PRESET.droneBase : 0.0001, now + 0.18, 0.55);
+    this.droneFilter.frequency.setTargetAtTime(targetFrequency, now, 0.055);
+    this.droneFilter.frequency.setTargetAtTime(220 + settings.timbre * 520, now + 0.28, 0.65);
+    this.dronePan.pan.setTargetAtTime(pan, now, 0.08);
+    this.dronePan.pan.setTargetAtTime(0, now + 0.28, 0.9);
   }
 
-  private setFluidLevel(value: number, timeConstant: number): void {
-    if (!this.context || !this.fluidGain) return;
-    this.fluidGain.gain.setTargetAtTime(value, this.context.currentTime, timeConstant);
+  private setDroneLevel(value: number, timeConstant: number): void {
+    if (!this.droneGain) return;
+    this.droneGain.gain.setTargetAtTime(value, Tone.now(), timeConstant);
   }
 }
