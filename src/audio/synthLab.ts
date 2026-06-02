@@ -63,6 +63,7 @@ export class SynthLab {
   private restartTimer = 0;
   private master = new Tone.Gain(DEFAULT_PRESET.master).toDestination();
   private dryBus = new Tone.Gain(DEFAULT_PRESET.dryBus).connect(this.master);
+  private wetBus = new Tone.Gain(1).connect(this.master);
   private pitchShift = new Tone.PitchShift({
     pitch: DEFAULT_PRESET.pitch,
     windowSize: DEFAULT_PRESET.pitchWindow,
@@ -108,6 +109,7 @@ export class SynthLab {
   }
 
   private bind(): void {
+    this.decorateControls();
     this.button("synthLabToggle").addEventListener("click", () => {
       this.root.classList.toggle("collapsed");
     });
@@ -153,11 +155,14 @@ export class SynthLab {
   private connectPlayer(): void {
     if (!this.player) return;
     this.player.disconnect();
+    this.lfoFilter.disconnect();
     this.delay.disconnect();
     this.reverb.disconnect();
     this.spatial.disconnect();
-    this.player.chain(this.pitchShift, this.lfoFilter, this.delay, this.reverb, this.spatial, this.dryBus);
-    this.setStatus("Serial: Grain -> Pitch -> LFO Filter -> Delay -> Reverb -> 3D");
+    this.player.chain(this.pitchShift, this.lfoFilter);
+    this.lfoFilter.connect(this.dryBus);
+    this.lfoFilter.chain(this.delay, this.reverb, this.spatial, this.wetBus);
+    this.setStatus("Chain: Grain -> Pitch -> LFO Filter, then Dry + Delay -> Reverb -> 3D");
   }
 
   private async play(): Promise<void> {
@@ -189,6 +194,7 @@ export class SynthLab {
 
   private syncFromControls(changedId = ""): void {
     const preset = this.readPreset();
+    const previousPlaying = this.playing;
     this.master.gain.rampTo(preset.master, 0.05);
     this.dryBus.gain.rampTo(preset.dryBus, 0.05);
     this.pitchShift.pitch = preset.pitch;
@@ -218,7 +224,44 @@ export class SynthLab {
       this.scheduleAudibleRestart();
     }
 
+    this.updateControlReadouts();
+    if (changedId) {
+      this.setStatus(`${this.controlLabel(changedId)} applied${previousPlaying ? "" : " (press Play to hear it)"}`);
+    }
     this.writePreset(preset);
+  }
+
+  private decorateControls(): void {
+    for (const control of this.root.querySelectorAll<HTMLInputElement>("input[data-synth]")) {
+      const label = control.closest("label");
+      if (!label || label.querySelector(".control-value")) continue;
+      const output = document.createElement("output");
+      output.className = "control-value";
+      output.htmlFor = control.id;
+      label.append(output);
+    }
+    this.updateControlReadouts();
+  }
+
+  private updateControlReadouts(): void {
+    for (const control of this.root.querySelectorAll<HTMLInputElement>("input[data-synth]")) {
+      const output = control.closest("label")?.querySelector<HTMLOutputElement>(".control-value");
+      if (!output) continue;
+      output.value = control.type === "checkbox" ? (control.checked ? "on" : "off") : this.formatValue(control.value);
+    }
+  }
+
+  private formatValue(value: string): string {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return value;
+    if (Math.abs(numeric) >= 100) return String(Math.round(numeric));
+    if (Math.abs(numeric) >= 10) return numeric.toFixed(1);
+    return numeric.toFixed(2);
+  }
+
+  private controlLabel(id: string): string {
+    const label = this.root.querySelector(`#${id}`)?.closest("label")?.querySelector("span")?.textContent;
+    return label || "Control";
   }
 
   private isGranularControl(id: string): boolean {
@@ -229,9 +272,10 @@ export class SynthLab {
     if (!this.player || !this.playing) return;
     window.clearTimeout(this.restartTimer);
     this.restartTimer = window.setTimeout(() => {
-      this.player?.restart();
+      this.player?.stop();
+      this.player?.start("+0.01");
       this.setStatus("Granular settings applied");
-    }, 120);
+    }, 80);
   }
 
   private readPreset(): SynthLabPreset {

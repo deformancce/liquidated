@@ -462,15 +462,25 @@ input[type="range"] {
 
 .synth-lab label {
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-columns: 96px minmax(0, 1fr) 48px;
   align-items: center;
   gap: 10px;
   min-height: 28px;
 }
 
 .synth-lab .check-row {
-  grid-template-columns: 96px auto;
+  grid-template-columns: 96px auto 48px;
   justify-content: start;
+}
+
+.control-value {
+  overflow: hidden;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .synth-lab input[type="range"] {
