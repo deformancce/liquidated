@@ -169,6 +169,15 @@
 
             <fieldset class="preset-fieldset">
               <legend>Preset</legend>
+              <div class="preset-controls">
+                <input id="presetName" type="text" value="Water Lab 01" aria-label="Preset name">
+                <button id="saveSynthPreset" type="button">Save</button>
+                <select id="savedSynthPresets" aria-label="Saved presets"></select>
+                <button id="loadSynthPreset" type="button">Load</button>
+                <button id="deleteSynthPreset" type="button">Delete</button>
+                <button id="applySynthPreset" type="button">Apply JSON</button>
+                <button id="resetSynthPreset" type="button">Reset</button>
+              </div>
               <textarea id="synthPresetOutput" spellcheck="false"></textarea>
               <button id="copySynthPreset" type="button">Copy Preset</button>
             </fieldset>

@@ -1,6 +1,7 @@
 import * as Tone from "tone";
 
 type LabControl = HTMLInputElement | HTMLSelectElement;
+type StoredPresetMap = Record<string, SynthLabPreset>;
 
 interface SynthLabPreset {
   grainSize: number;
@@ -51,6 +52,8 @@ const DEFAULT_PRESET: SynthLabPreset = {
   dryBus: 0.74,
   master: 0.55,
 };
+
+const STORAGE_KEY = "liquidated.synthLab.presets";
 
 export class SynthLab {
   private root: HTMLElement;
@@ -116,11 +119,17 @@ export class SynthLab {
     this.button("grainStop").addEventListener("click", () => this.stop());
     this.button("grainRestart").addEventListener("click", () => this.restart());
     this.button("copySynthPreset").addEventListener("click", () => this.copyPreset());
+    this.button("saveSynthPreset").addEventListener("click", () => this.saveCurrentPreset());
+    this.button("loadSynthPreset").addEventListener("click", () => this.loadSelectedPreset());
+    this.button("deleteSynthPreset").addEventListener("click", () => this.deleteSelectedPreset());
+    this.button("applySynthPreset").addEventListener("click", () => this.applyPresetJson());
+    this.button("resetSynthPreset").addEventListener("click", () => this.applyPreset(DEFAULT_PRESET, "Default preset"));
 
     for (const control of this.root.querySelectorAll<LabControl>("input[data-synth], select[data-synth]")) {
       control.addEventListener("input", () => this.syncFromControls(control.id));
       control.addEventListener("change", () => this.syncFromControls(control.id));
     }
+    this.refreshPresetSelect();
   }
 
   private async loadFile(file: File): Promise<void> {
@@ -256,6 +265,139 @@ export class SynthLab {
     this.textarea("synthPresetOutput").value = JSON.stringify(preset, null, 2);
   }
 
+  private applyPreset(preset: SynthLabPreset, status = "Preset applied"): void {
+    const clean = this.sanitizePreset(preset);
+    this.setInputValue("grainSize", clean.grainSize);
+    this.setInputValue("grainOverlap", clean.overlap);
+    this.setInputValue("playbackRate", clean.playbackRate);
+    this.setInputValue("grainDetune", clean.detune);
+    this.input("grainReverse").checked = clean.reverse;
+    this.setInputValue("pitchShift", clean.pitch);
+    this.setInputValue("pitchWindow", clean.pitchWindow);
+    this.setInputValue("filterCutoff", clean.filterCutoff);
+    this.setInputValue("filterQ", clean.filterQ);
+    this.setInputValue("lfoRate", clean.lfoRate);
+    this.setInputValue("lfoDepth", clean.lfoDepth);
+    this.setInputValue("delayTime", clean.delayTime);
+    this.setInputValue("delayFeedback", clean.delayFeedback);
+    this.setInputValue("delaySend", clean.delaySend);
+    this.setInputValue("reverbDecay", clean.reverbDecay);
+    this.setInputValue("reverbPreDelay", clean.reverbPreDelay);
+    this.setInputValue("reverbSend", clean.reverbSend);
+    this.setInputValue("spatialX", clean.spatialX);
+    this.setInputValue("spatialY", clean.spatialY);
+    this.setInputValue("spatialZ", clean.spatialZ);
+    this.setInputValue("dryBus", clean.dryBus);
+    this.setInputValue("labMaster", clean.master);
+    this.syncFromControls("preset");
+    this.setStatus(status);
+  }
+
+  private saveCurrentPreset(): void {
+    const name = this.input("presetName").value.trim() || "Untitled Preset";
+    const presets = this.loadPresetMap();
+    presets[name] = this.readPreset();
+    this.savePresetMap(presets);
+    this.refreshPresetSelect(name);
+    this.setStatus(`Saved ${name}`);
+  }
+
+  private loadSelectedPreset(): void {
+    const name = this.select("savedSynthPresets").value;
+    const preset = this.loadPresetMap()[name];
+    if (!preset) {
+      this.setStatus("No preset selected");
+      return;
+    }
+    this.input("presetName").value = name;
+    this.applyPreset(preset, `Loaded ${name}`);
+  }
+
+  private deleteSelectedPreset(): void {
+    const select = this.select("savedSynthPresets");
+    const name = select.value;
+    if (!name) return;
+    const presets = this.loadPresetMap();
+    delete presets[name];
+    this.savePresetMap(presets);
+    this.refreshPresetSelect();
+    this.setStatus(`Deleted ${name}`);
+  }
+
+  private applyPresetJson(): void {
+    try {
+      const parsed = JSON.parse(this.textarea("synthPresetOutput").value) as Partial<SynthLabPreset>;
+      this.applyPreset({ ...DEFAULT_PRESET, ...parsed }, "JSON applied");
+    } catch {
+      this.setStatus("Invalid preset JSON");
+    }
+  }
+
+  private refreshPresetSelect(selectedName = ""): void {
+    const select = this.select("savedSynthPresets");
+    const presets = this.loadPresetMap();
+    select.replaceChildren();
+    const names = Object.keys(presets).sort((a, b) => a.localeCompare(b));
+    for (const name of names) {
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      select.append(option);
+    }
+    if (selectedName) select.value = selectedName;
+  }
+
+  private loadPresetMap(): StoredPresetMap {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as StoredPresetMap;
+      return typeof parsed === "object" && parsed ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private savePresetMap(presets: StoredPresetMap): void {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
+  }
+
+  private sanitizePreset(preset: SynthLabPreset): SynthLabPreset {
+    return {
+      grainSize: this.clampPresetValue(preset.grainSize, 0.02, 0.6, DEFAULT_PRESET.grainSize),
+      overlap: this.clampPresetValue(preset.overlap, 0.005, 0.3, DEFAULT_PRESET.overlap),
+      playbackRate: this.clampPresetValue(preset.playbackRate, 0.25, 2.5, DEFAULT_PRESET.playbackRate),
+      detune: this.clampPresetValue(preset.detune, -2400, 2400, DEFAULT_PRESET.detune),
+      reverse: Boolean(preset.reverse),
+      pitch: this.clampPresetValue(preset.pitch, -24, 24, DEFAULT_PRESET.pitch),
+      pitchWindow: this.clampPresetValue(preset.pitchWindow, 0.03, 0.16, DEFAULT_PRESET.pitchWindow),
+      filterCutoff: this.clampPresetValue(preset.filterCutoff, 80, 9000, DEFAULT_PRESET.filterCutoff),
+      filterQ: this.clampPresetValue(preset.filterQ, 0.2, 30, DEFAULT_PRESET.filterQ),
+      lfoRate: this.clampPresetValue(preset.lfoRate, 0.02, 12, DEFAULT_PRESET.lfoRate),
+      lfoDepth: this.clampPresetValue(preset.lfoDepth, 0, 5000, DEFAULT_PRESET.lfoDepth),
+      delayTime: this.clampPresetValue(preset.delayTime, 0.02, 1, DEFAULT_PRESET.delayTime),
+      delayFeedback: this.clampPresetValue(preset.delayFeedback, 0, 0.88, DEFAULT_PRESET.delayFeedback),
+      delaySend: this.clampPresetValue(preset.delaySend, 0, 1, DEFAULT_PRESET.delaySend),
+      reverbDecay: this.clampPresetValue(preset.reverbDecay, 0.2, 12, DEFAULT_PRESET.reverbDecay),
+      reverbPreDelay: this.clampPresetValue(preset.reverbPreDelay, 0, 0.5, DEFAULT_PRESET.reverbPreDelay),
+      reverbSend: this.clampPresetValue(preset.reverbSend, 0, 1, DEFAULT_PRESET.reverbSend),
+      spatialX: this.clampPresetValue(preset.spatialX, -4, 4, DEFAULT_PRESET.spatialX),
+      spatialY: this.clampPresetValue(preset.spatialY, -2, 2, DEFAULT_PRESET.spatialY),
+      spatialZ: this.clampPresetValue(preset.spatialZ, -6, 2, DEFAULT_PRESET.spatialZ),
+      dryBus: this.clampPresetValue(preset.dryBus, 0, 1, DEFAULT_PRESET.dryBus),
+      master: this.clampPresetValue(preset.master, 0, 1, DEFAULT_PRESET.master),
+    };
+  }
+
+  private clampPresetValue(value: number, min: number, max: number, fallback: number): number {
+    if (!Number.isFinite(value)) return fallback;
+    return Math.max(min, Math.min(max, value));
+  }
+
+  private setInputValue(id: string, value: number): void {
+    this.input(id).value = String(value);
+  }
+
   private copyPreset(): void {
     const text = this.textarea("synthPresetOutput").value;
     navigator.clipboard?.writeText(text).then(
@@ -274,6 +416,10 @@ export class SynthLab {
 
   private button(id: string): HTMLButtonElement {
     return this.control<HTMLButtonElement>(id);
+  }
+
+  private select(id: string): HTMLSelectElement {
+    return this.control<HTMLSelectElement>(id);
   }
 
   private textarea(id: string): HTMLTextAreaElement {

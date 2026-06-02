@@ -494,6 +494,27 @@ input[type="range"] {
   font-size: 11px;
 }
 
+.preset-controls {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) repeat(2, auto);
+  gap: 8px;
+}
+
+.preset-controls input,
+.preset-controls select {
+  min-width: 0;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text);
+  padding: 0 9px;
+}
+
+.preset-controls select {
+  grid-column: span 2;
+}
+
 .synth-lab.is-playing .synth-lab-header {
   border-color: rgba(190, 228, 235, 0.38);
   box-shadow: inset 0 -1px 0 rgba(190, 228, 235, 0.18);
