@@ -6,6 +6,9 @@ export interface FluidConfig {
   pressure: number;
   curl: number;
   splatRadius: number;
+  bloomIntensity: number;
+  bloomThreshold: number;
+  sunraysWeight: number;
 }
 
 export interface FluidSplat {
@@ -109,6 +112,8 @@ const DISPLAY_FRAGMENT = `
   uniform sampler2D uTexture;
   uniform vec2 texelSize;
   uniform float bloom;
+  uniform float threshold;
+  uniform float sunrays;
   uniform float background;
 
   void main () {
@@ -119,7 +124,9 @@ const DISPLAY_FRAGMENT = `
     vec3 b = texture2D(uTexture, vUv - vec2(0.0, texelSize.y)).rgb;
     float edge = length(r - l) + length(t - b);
     vec3 silver = vec3(dot(c, vec3(0.36, 0.36, 0.42)));
-    vec3 shaded = mix(c, silver + c * 0.34, 0.58) + edge * bloom;
+    float light = smoothstep(threshold, 1.0, max(c.r, max(c.g, c.b)));
+    float ray = smoothstep(0.0, 1.0, 1.0 - distance(vUv, vec2(0.5, 0.5))) * sunrays;
+    vec3 shaded = mix(c, silver + c * 0.34, 0.58) + edge * bloom + light * ray * 0.18;
     vec3 back = vec3(0.022, 0.024, 0.028) * background;
     gl_FragColor = vec4(back + shaded, 1.0);
   }
@@ -149,10 +156,13 @@ export class FluidSimulation {
   private buffer: WebGLBuffer;
   private config: FluidConfig = {
     densityDissipation: 0.99,
-    velocityDissipation: 0.972,
-    pressure: 0.74,
-    curl: 0.7,
-    splatRadius: 0.008,
+    velocityDissipation: 0.97144,
+    pressure: 0.62,
+    curl: 0,
+    splatRadius: 0.0018,
+    bloomIntensity: 0.8,
+    bloomThreshold: 0.6,
+    sunraysWeight: 1,
   };
   private lastFrame = performance.now();
 
@@ -275,7 +285,9 @@ export class FluidSimulation {
     this.bindTexture(this.dye.read.texture, 0);
     gl.uniform1i(this.displayProgram.uniforms.uTexture, 0);
     gl.uniform2f(this.displayProgram.uniforms.texelSize, 1 / this.dye.read.width, 1 / this.dye.read.height);
-    gl.uniform1f(this.displayProgram.uniforms.bloom, 0.65 + this.config.curl * 0.4);
+    gl.uniform1f(this.displayProgram.uniforms.bloom, this.config.bloomIntensity + this.config.curl * 0.2);
+    gl.uniform1f(this.displayProgram.uniforms.threshold, this.config.bloomThreshold);
+    gl.uniform1f(this.displayProgram.uniforms.sunrays, this.config.sunraysWeight);
     gl.uniform1f(this.displayProgram.uniforms.background, 1);
     this.blit(null);
   }
