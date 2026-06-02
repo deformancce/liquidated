@@ -15,11 +15,11 @@ interface Particle {
 }
 
 const COLORS: Record<Side | "cascade" | "absorption" | "core", [number, number, number]> = {
-  buy: [69, 209, 150],
-  sell: [255, 91, 110],
-  cascade: [247, 198, 93],
-  absorption: [100, 215, 255],
-  core: [244, 241, 232],
+  buy: [205, 218, 216],
+  sell: [218, 213, 222],
+  cascade: [246, 241, 222],
+  absorption: [188, 222, 232],
+  core: [242, 241, 236],
 };
 
 export class LiquidRenderer {
@@ -28,6 +28,7 @@ export class LiquidRenderer {
   private fluid: FluidSimulation | null = null;
   private particles: Particle[] = [];
   private lastFrame = performance.now();
+  private lastAmbientSplat = 0;
   private pressure = 0;
   private turbulence = 0;
 
@@ -58,19 +59,19 @@ export class LiquidRenderer {
     if (this.fluid) {
       const fromLeft = trade.side === "buy";
       this.fluid.setConfig({
-        densityDissipation: 0.982 + settings.viscosity * 0.012,
-        velocityDissipation: 0.955 + settings.viscosity * 0.028,
-        curl: settings.turbulence + intensity * 0.08,
-        splatRadius: 0.0028 + intensity * 0.0018,
+        densityDissipation: 0.988 + settings.viscosity * 0.008,
+        velocityDissipation: 0.966 + settings.viscosity * 0.022,
+        curl: settings.turbulence + intensity * 0.12,
+        splatRadius: 0.006 + intensity * 0.0038,
       });
       this.fluid.splat({
-        x: fromLeft ? 0.18 : 0.82,
-        y: 0.22 + Math.random() * 0.58,
-        dx: (fromLeft ? 1 : -1) * (0.8 + intensity * 1.8),
-        dy: (Math.random() - 0.5) * (0.6 + settings.turbulence),
+        x: fromLeft ? 0.12 + Math.random() * 0.26 : 0.62 + Math.random() * 0.26,
+        y: 0.14 + Math.random() * 0.72,
+        dx: (fromLeft ? 1 : -1) * (0.55 + intensity * 1.35),
+        dy: (Math.random() - 0.5) * (0.95 + settings.turbulence * 0.8),
         color: COLORS[trade.side],
-        radius: 0.0028 + intensity * 0.0022,
-        force: 1.2 + intensity,
+        radius: 0.0065 + intensity * 0.0044,
+        force: 0.85 + intensity * 0.86,
       });
       return;
     }
@@ -89,19 +90,19 @@ export class LiquidRenderer {
       const isAbsorption = signal.type.includes("absorption");
       const fromLeft = side === "buy" || isAbsorption;
       this.fluid.setConfig({
-        densityDissipation: isCascade ? 0.992 : 0.984 + settings.viscosity * 0.01,
-        velocityDissipation: isCascade ? 0.972 : 0.958 + settings.viscosity * 0.022,
-        curl: settings.turbulence + signal.intensity * (isCascade ? 0.26 : 0.11),
-        splatRadius: 0.004 + signal.intensity * (isCascade ? 0.0028 : 0.0016),
+        densityDissipation: isCascade ? 0.995 : 0.989 + settings.viscosity * 0.007,
+        velocityDissipation: isCascade ? 0.978 : 0.966 + settings.viscosity * 0.02,
+        curl: settings.turbulence + signal.intensity * (isCascade ? 0.34 : 0.16),
+        splatRadius: 0.009 + signal.intensity * (isCascade ? 0.005 : 0.0032),
       });
       this.fluid.splat({
         x: isCascade ? 0.5 : fromLeft ? 0.24 : 0.76,
-        y: isCascade ? 0.5 : 0.26 + Math.random() * 0.52,
-        dx: isCascade ? (Math.random() - 0.5) * 5 : (fromLeft ? 1 : -1) * (1.6 + signal.intensity),
-        dy: isCascade ? (Math.random() - 0.5) * 5 : (Math.random() - 0.5) * 1.2,
+        y: isCascade ? 0.5 : 0.18 + Math.random() * 0.64,
+        dx: isCascade ? (Math.random() - 0.5) * 4.2 : (fromLeft ? 1 : -1) * (1.05 + signal.intensity * 0.9),
+        dy: isCascade ? (Math.random() - 0.5) * 4.2 : (Math.random() - 0.5) * 1.7,
         color: COLORS[colorKey],
-        radius: 0.004 + signal.intensity * (isCascade ? 0.003 : 0.0014),
-        force: isCascade ? 3 + signal.intensity : 1.4 + signal.intensity,
+        radius: 0.01 + signal.intensity * (isCascade ? 0.005 : 0.0028),
+        force: isCascade ? 2.4 + signal.intensity * 0.8 : 1 + signal.intensity * 0.72,
       });
       return;
     }
@@ -114,10 +115,11 @@ export class LiquidRenderer {
   render(settings: ScannerSettings): void {
     if (this.fluid) {
       this.fluid.setConfig({
-        densityDissipation: 0.982 + settings.viscosity * 0.012,
-        velocityDissipation: 0.955 + settings.viscosity * 0.026,
+        densityDissipation: 0.988 + settings.viscosity * 0.008,
+        velocityDissipation: 0.966 + settings.viscosity * 0.022,
         curl: settings.turbulence,
       });
+      this.pushAmbientFluid(settings);
       this.fluid.render();
       requestAnimationFrame(() => this.render(settings));
       return;
@@ -164,6 +166,24 @@ export class LiquidRenderer {
         pressure: intensity,
       });
     }
+  }
+
+  private pushAmbientFluid(settings: ScannerSettings): void {
+    if (!this.fluid) return;
+    const now = performance.now();
+    if (now - this.lastAmbientSplat < 240) return;
+    this.lastAmbientSplat = now;
+
+    const drift = Math.sin(now * 0.0002) * 0.36;
+    this.fluid.splat({
+      x: 0.5 + drift + (Math.random() - 0.5) * 0.24,
+      y: 0.12 + Math.random() * 0.76,
+      dx: (Math.random() - 0.5) * (0.7 + settings.turbulence * 0.6),
+      dy: 0.25 + Math.random() * 0.55,
+      color: COLORS.core,
+      radius: 0.014 + settings.viscosity * 0.008,
+      force: 0.16 + settings.turbulence * 0.08,
+    });
   }
 
   private drawField(width: number, height: number, now: number, settings: ScannerSettings): void {

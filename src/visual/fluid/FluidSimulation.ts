@@ -118,8 +118,9 @@ const DISPLAY_FRAGMENT = `
     vec3 t = texture2D(uTexture, vUv + vec2(0.0, texelSize.y)).rgb;
     vec3 b = texture2D(uTexture, vUv - vec2(0.0, texelSize.y)).rgb;
     float edge = length(r - l) + length(t - b);
-    vec3 shaded = c + edge * bloom;
-    vec3 back = vec3(0.025, 0.03, 0.045) * background;
+    vec3 silver = vec3(dot(c, vec3(0.36, 0.36, 0.42)));
+    vec3 shaded = mix(c, silver + c * 0.34, 0.58) + edge * bloom;
+    vec3 back = vec3(0.022, 0.024, 0.028) * background;
     gl_FragColor = vec4(back + shaded, 1.0);
   }
 `;
@@ -147,11 +148,11 @@ export class FluidSimulation {
   private clearProgram: Program;
   private buffer: WebGLBuffer;
   private config: FluidConfig = {
-    densityDissipation: 0.986,
-    velocityDissipation: 0.974,
+    densityDissipation: 0.99,
+    velocityDissipation: 0.972,
     pressure: 0.74,
     curl: 0.7,
-    splatRadius: 0.0038,
+    splatRadius: 0.008,
   };
   private lastFrame = performance.now();
 
@@ -191,9 +192,9 @@ export class FluidSimulation {
   splat(input: FluidSplat): void {
     const x = clamp(input.x, 0, 1);
     const y = clamp(input.y, 0, 1);
-    const radius = Math.max(0.0008, input.radius || this.config.splatRadius);
-    const forceScale = input.force * 0.00042;
-    const color = input.color.map((channel) => clamp(channel / 255, 0, 1)) as [number, number, number];
+    const radius = Math.max(0.002, input.radius || this.config.splatRadius);
+    const forceScale = input.force * 0.00034;
+    const color = input.color.map((channel) => clamp(channel / 220, 0, 1.25)) as [number, number, number];
 
     this.drawVelocitySplat(x, y, input.dx * forceScale, input.dy * forceScale, radius);
     this.drawDyeSplat(x, y, color, radius * 1.35);

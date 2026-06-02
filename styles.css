@@ -6,11 +6,11 @@
   --line: rgba(255, 255, 255, 0.13);
   --text: #f4f1e8;
   --muted: #9ca6a7;
-  --buy: #45d196;
-  --sell: #ff5b6e;
-  --liq: #f7c65d;
-  --cyan: #64d7ff;
-  --violet: #a98cff;
+  --buy: #cddbd8;
+  --sell: #dad5df;
+  --liq: #f6f0dc;
+  --cyan: #bee4eb;
+  --violet: #d7d2e8;
 }
 
 * {
@@ -45,8 +45,8 @@ input {
   min-height: 620px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 20% 14%, rgba(100, 215, 255, 0.16), transparent 28%),
-    linear-gradient(135deg, #080a0f 0%, #141416 48%, #07090e 100%);
+    radial-gradient(circle at 50% 40%, rgba(235, 238, 232, 0.12), transparent 42%),
+    linear-gradient(135deg, #080a0f 0%, #171819 48%, #07090e 100%);
 }
 
 #flowCanvas {
