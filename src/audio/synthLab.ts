@@ -4,6 +4,7 @@ type LabControl = HTMLInputElement | HTMLSelectElement;
 type StoredPresetMap = Record<string, SynthLabPreset>;
 
 interface SynthLabPreset {
+  fullChain: boolean;
   grainSize: number;
   overlap: number;
   playbackRate: number;
@@ -29,6 +30,7 @@ interface SynthLabPreset {
 }
 
 const DEFAULT_PRESET: SynthLabPreset = {
+  fullChain: false,
   grainSize: 0.12,
   overlap: 0.06,
   playbackRate: 1,
@@ -61,6 +63,7 @@ export class SynthLab {
   private objectUrl: string | null = null;
   private playing = false;
   private restartTimer = 0;
+  private fullChain = DEFAULT_PRESET.fullChain;
   private master = new Tone.Gain(DEFAULT_PRESET.master).toDestination();
   private dryBus = new Tone.Gain(DEFAULT_PRESET.dryBus).connect(this.master);
   private delayInput = new Tone.Gain(DEFAULT_PRESET.delaySend);
@@ -168,15 +171,20 @@ export class SynthLab {
     this.reverb.disconnect();
     this.spatial.disconnect();
     this.reverbOutput.disconnect();
-    this.player.chain(this.pitchShift, this.lfoFilter);
-    this.lfoFilter.connect(this.dryBus);
-    this.lfoFilter.connect(this.delayInput);
-    this.delayInput.connect(this.delay);
-    this.delay.connect(this.delayOutput);
-    this.delayOutput.connect(this.master);
-    this.delay.connect(this.reverbInput);
-    this.reverbInput.chain(this.reverb, this.spatial, this.reverbOutput, this.master);
-    this.setStatus("Chain: Grain -> Pitch -> LFO Filter, Dry + Delay -> Reverb -> 3D");
+    if (this.fullChain) {
+      this.player.chain(this.pitchShift, this.lfoFilter);
+      this.lfoFilter.connect(this.dryBus);
+      this.lfoFilter.connect(this.delayInput);
+      this.delayInput.connect(this.delay);
+      this.delay.connect(this.delayOutput);
+      this.delayOutput.connect(this.master);
+      this.delay.connect(this.reverbInput);
+      this.reverbInput.chain(this.reverb, this.spatial, this.reverbOutput, this.master);
+      this.setStatus("Full chain: Grain -> Pitch -> LFO Filter, Dry + Delay -> Reverb -> 3D");
+    } else {
+      this.player.connect(this.dryBus);
+      this.setStatus("Granular only: GrainPlayer -> Output");
+    }
   }
 
   private async play(): Promise<void> {
@@ -223,6 +231,8 @@ export class SynthLab {
   private syncFromControls(changedId = ""): void {
     const preset = this.readPreset();
     const previousPlaying = this.playing;
+    const chainChanged = preset.fullChain !== this.fullChain;
+    this.fullChain = preset.fullChain;
     this.master.gain.rampTo(preset.master, 0.05);
     this.dryBus.gain.rampTo(preset.dryBus, 0.05);
     this.delayInput.gain.rampTo(preset.delaySend, 0.05);
@@ -246,6 +256,10 @@ export class SynthLab {
       this.player.playbackRate = Math.max(0.05, preset.playbackRate);
       this.player.detune = preset.detune;
       this.player.reverse = preset.reverse;
+    }
+
+    if (chainChanged) {
+      this.connectPlayer();
     }
 
     if (this.isGranularControl(changedId)) {
@@ -293,7 +307,7 @@ export class SynthLab {
   }
 
   private isGranularControl(id: string): boolean {
-    return ["grainSize", "grainOverlap", "playbackRate", "grainDetune", "grainReverse"].includes(id);
+    return ["grainSize", "grainOverlap", "playbackRate", "grainDetune", "grainReverse", "fullChain"].includes(id);
   }
 
   private scheduleAudibleRestart(): void {
@@ -355,6 +369,7 @@ export class SynthLab {
 
   private readPreset(): SynthLabPreset {
     return {
+      fullChain: this.input("fullChain").checked,
       grainSize: this.number("grainSize"),
       overlap: this.number("grainOverlap"),
       playbackRate: this.number("playbackRate"),
@@ -387,6 +402,7 @@ export class SynthLab {
   private applyPreset(preset: SynthLabPreset, status = "Preset applied"): void {
     const clean = this.sanitizePreset(preset);
     this.setInputValue("grainSize", clean.grainSize);
+    this.input("fullChain").checked = clean.fullChain;
     this.setInputValue("grainOverlap", clean.overlap);
     this.setInputValue("playbackRate", clean.playbackRate);
     this.setInputValue("grainDetune", clean.detune);
@@ -484,6 +500,7 @@ export class SynthLab {
   private sanitizePreset(preset: SynthLabPreset): SynthLabPreset {
     return {
       grainSize: this.clampPresetValue(preset.grainSize, 0.02, 0.6, DEFAULT_PRESET.grainSize),
+      fullChain: Boolean(preset.fullChain),
       overlap: this.clampPresetValue(preset.overlap, 0.005, 0.3, DEFAULT_PRESET.overlap),
       playbackRate: this.clampPresetValue(preset.playbackRate, 0.25, 2.5, DEFAULT_PRESET.playbackRate),
       detune: this.clampPresetValue(preset.detune, -2400, 2400, DEFAULT_PRESET.detune),
