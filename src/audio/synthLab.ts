@@ -63,7 +63,10 @@ export class SynthLab {
   private restartTimer = 0;
   private master = new Tone.Gain(DEFAULT_PRESET.master).toDestination();
   private dryBus = new Tone.Gain(DEFAULT_PRESET.dryBus).connect(this.master);
-  private wetBus = new Tone.Gain(1).connect(this.master);
+  private delayInput = new Tone.Gain(DEFAULT_PRESET.delaySend);
+  private delayOutput = new Tone.Gain(1).connect(this.master);
+  private reverbInput = new Tone.Gain(DEFAULT_PRESET.reverbSend);
+  private reverbOutput = new Tone.Gain(1).connect(this.master);
   private pitchShift = new Tone.PitchShift({
     pitch: DEFAULT_PRESET.pitch,
     windowSize: DEFAULT_PRESET.pitchWindow,
@@ -93,12 +96,12 @@ export class SynthLab {
   private delay = new Tone.PingPongDelay({
     delayTime: DEFAULT_PRESET.delayTime,
     feedback: DEFAULT_PRESET.delayFeedback,
-    wet: DEFAULT_PRESET.delaySend,
+    wet: 1,
   });
   private reverb = new Tone.Reverb({
     decay: DEFAULT_PRESET.reverbDecay,
     preDelay: DEFAULT_PRESET.reverbPreDelay,
-    wet: DEFAULT_PRESET.reverbSend,
+    wet: 1,
   });
 
   constructor(root: HTMLElement) {
@@ -117,7 +120,9 @@ export class SynthLab {
       const file = (event.target as HTMLInputElement).files?.[0];
       if (file) this.loadFile(file);
     });
+    this.button("waterSeed").addEventListener("click", () => this.loadWaterSeed());
     this.button("grainPlay").addEventListener("click", () => this.play());
+    this.button("grainAudition").addEventListener("click", () => this.audition());
     this.button("grainStop").addEventListener("click", () => this.stop());
     this.button("grainRestart").addEventListener("click", () => this.restart());
     this.button("copySynthPreset").addEventListener("click", () => this.copyPreset());
@@ -156,13 +161,22 @@ export class SynthLab {
     if (!this.player) return;
     this.player.disconnect();
     this.lfoFilter.disconnect();
+    this.delayInput.disconnect();
     this.delay.disconnect();
+    this.delayOutput.disconnect();
+    this.reverbInput.disconnect();
     this.reverb.disconnect();
     this.spatial.disconnect();
+    this.reverbOutput.disconnect();
     this.player.chain(this.pitchShift, this.lfoFilter);
     this.lfoFilter.connect(this.dryBus);
-    this.lfoFilter.chain(this.delay, this.reverb, this.spatial, this.wetBus);
-    this.setStatus("Chain: Grain -> Pitch -> LFO Filter, then Dry + Delay -> Reverb -> 3D");
+    this.lfoFilter.connect(this.delayInput);
+    this.delayInput.connect(this.delay);
+    this.delay.connect(this.delayOutput);
+    this.delayOutput.connect(this.master);
+    this.delay.connect(this.reverbInput);
+    this.reverbInput.chain(this.reverb, this.spatial, this.reverbOutput, this.master);
+    this.setStatus("Chain: Grain -> Pitch -> LFO Filter, Dry + Delay -> Reverb -> 3D");
   }
 
   private async play(): Promise<void> {
@@ -176,6 +190,20 @@ export class SynthLab {
       this.playing = true;
       this.setTransportState(true);
     }
+  }
+
+  private async audition(): Promise<void> {
+    if (!this.player) {
+      this.loadWaterSeed();
+    }
+    await Tone.start();
+    this.player?.restart();
+    this.playing = true;
+    this.setTransportState(true);
+    window.setTimeout(() => {
+      this.stop();
+      this.setStatus("Audition complete");
+    }, 2200);
   }
 
   private stop(): void {
@@ -197,6 +225,8 @@ export class SynthLab {
     const previousPlaying = this.playing;
     this.master.gain.rampTo(preset.master, 0.05);
     this.dryBus.gain.rampTo(preset.dryBus, 0.05);
+    this.delayInput.gain.rampTo(preset.delaySend, 0.05);
+    this.reverbInput.gain.rampTo(preset.reverbSend, 0.05);
     this.pitchShift.pitch = preset.pitch;
     this.pitchShift.windowSize = preset.pitchWindow;
     this.lfoFilter.frequency.rampTo(preset.filterCutoff, 0.05);
@@ -206,10 +236,8 @@ export class SynthLab {
     this.lfo.max = preset.filterCutoff + preset.lfoDepth;
     this.delay.delayTime.rampTo(preset.delayTime, 0.05);
     this.delay.feedback.rampTo(preset.delayFeedback, 0.05);
-    this.delay.wet.rampTo(preset.delaySend, 0.05);
     this.reverb.decay = preset.reverbDecay;
     this.reverb.preDelay = preset.reverbPreDelay;
-    this.reverb.wet.rampTo(preset.reverbSend, 0.05);
     this.spatial.setPosition(preset.spatialX, preset.spatialY, preset.spatialZ);
 
     if (this.player) {
@@ -276,6 +304,53 @@ export class SynthLab {
       this.player?.start("+0.01");
       this.setStatus("Granular settings applied");
     }, 80);
+  }
+
+  private loadWaterSeed(): void {
+    this.stop();
+    if (this.objectUrl) {
+      URL.revokeObjectURL(this.objectUrl);
+      this.objectUrl = null;
+    }
+    this.player?.dispose();
+    this.player = new Tone.GrainPlayer({
+      url: this.createWaterSeedBuffer(),
+      loop: true,
+    });
+    this.connectPlayer();
+    this.syncFromControls();
+    this.setStatus("Generated water seed loaded");
+  }
+
+  private createWaterSeedBuffer(): AudioBuffer {
+    const sampleRate = Tone.getContext().sampleRate;
+    const duration = 2.8;
+    const buffer = Tone.getContext().createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
+    const data = buffer.getChannelData(0);
+    const droplets = [
+      { at: 0.08, frequency: 720, gain: 0.9, decay: 0.2 },
+      { at: 0.42, frequency: 980, gain: 0.48, decay: 0.16 },
+      { at: 0.86, frequency: 540, gain: 0.62, decay: 0.28 },
+      { at: 1.38, frequency: 1240, gain: 0.36, decay: 0.14 },
+      { at: 1.92, frequency: 680, gain: 0.52, decay: 0.22 },
+      { at: 2.36, frequency: 420, gain: 0.38, decay: 0.34 },
+    ];
+
+    for (let index = 0; index < data.length; index += 1) {
+      const time = index / sampleRate;
+      let sample = 0;
+      for (const droplet of droplets) {
+        const local = time - droplet.at;
+        if (local < 0) continue;
+        const envelope = Math.exp(-local / droplet.decay);
+        const sweep = droplet.frequency * (1 + Math.exp(-local / 0.08) * 0.42);
+        sample += Math.sin(local * sweep * Math.PI * 2) * envelope * droplet.gain;
+        sample += (Math.random() * 2 - 1) * Math.exp(-local / 0.035) * droplet.gain * 0.08;
+      }
+      data[index] = Math.max(-1, Math.min(1, sample * 0.42));
+    }
+
+    return buffer;
   }
 
   private readPreset(): SynthLabPreset {
