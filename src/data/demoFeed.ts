@@ -20,11 +20,13 @@ export class DemoFeed {
 
   start(): void {
     this.stop();
+    this.tick();
     this.timer = window.setInterval(() => this.tick(), 85);
   }
 
   stop(): void {
     window.clearInterval(this.timer);
+    this.timer = 0;
   }
 
   setMarket(market: Market): void {
@@ -36,7 +38,7 @@ export class DemoFeed {
     const config = MARKET_CONFIG[this.market];
     const side = Math.random() > 0.52 ? "buy" : "sell";
     const clusterBoost = Math.random() > 0.86 ? 6 : 1;
-    const size = (Math.pow(Math.random(), 2.25) * config.largePrintSize + config.minPrintSize * 0.4) * clusterBoost;
+    const size = (config.minPrintSize * 1.08 + Math.pow(Math.random(), 1.8) * config.largePrintSize) * clusterBoost;
     const drift = side === "buy" ? 1 : -1;
 
     this.price *= 1 + drift * Math.random() * 0.00045 * clusterBoost + (Math.random() - 0.5) * 0.00035;

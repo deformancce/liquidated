@@ -24,7 +24,7 @@ const BASE_FREQ = 110; // A2
 const INTERVALS = [0, 7, 12, 19]; // quintal, key-neutral drone voicing
 
 /**
- * Slow evolving oscillator pad meant to sit underneath the granular synth.
+ * Slow evolving oscillator pad meant to sit underneath the water synth.
  * Oscillators run continuously once started; transport is a gated master gain,
  * so toggling is click-free.
  */

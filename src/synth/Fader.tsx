@@ -17,12 +17,13 @@ interface FaderProps<K extends string> {
   spec: FaderSpec<K>;
   value: number;
   onChange: (value: number) => void;
+  disabled?: boolean;
 }
 
-export function Fader<K extends string>({ spec, value, onChange }: FaderProps<K>) {
+export function Fader<K extends string>({ spec, value, onChange, disabled = false }: FaderProps<K>) {
   const text = spec.format ? spec.format(value) : String(value);
   return (
-    <label className="fader">
+    <label className={`fader ${disabled ? "disabled" : ""}`}>
       <output className="fader-value">{text}</output>
       <input
         className="fader-input"
@@ -31,6 +32,7 @@ export function Fader<K extends string>({ spec, value, onChange }: FaderProps<K>
         max={spec.max}
         step={spec.step}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
       />
       <span className="fader-label">{spec.label}</span>

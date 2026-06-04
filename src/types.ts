@@ -24,6 +24,28 @@ export interface TradeEvent {
   quantity: number;
   timestamp: number;
   source: "hyperliquid" | "demo";
+  liquidation?: {
+    markPrice?: number;
+    method?: "market" | "backstop" | string;
+    liquidatedUser?: string;
+  };
+}
+
+export interface LiquidationEvent {
+  market: Market;
+  side: Side;
+  price: number;
+  markPrice?: number;
+  size: number;
+  quantity: number;
+  fills: number;
+  timestamp: number;
+  method?: string;
+  kind?: string;
+  liquidatedUser?: string;
+  liquidator?: string;
+  eventHash?: string;
+  source: "thegraph" | "hyperliquid-user" | "grpc";
 }
 
 export interface BboEvent {

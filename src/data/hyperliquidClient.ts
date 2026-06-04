@@ -19,6 +19,7 @@ export class HyperliquidClient {
   private reconnects = 0;
   private callbacks: Callbacks;
   private endpoint: string;
+  private status: "idle" | "connecting" | "live" | "reconnecting" | "error" = "idle";
 
   constructor(market: Market, callbacks: Callbacks, endpoint = "wss://api.hyperliquid.xyz/ws") {
     this.market = market;
@@ -26,41 +27,51 @@ export class HyperliquidClient {
     this.endpoint = endpoint;
   }
 
-  connect(): void {
-    this.disconnect();
-    this.callbacks.onStatus("connecting");
-    this.socket = new WebSocket(this.endpoint);
+  connect(force = false): void {
+    if (!force && this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
 
-    this.socket.addEventListener("open", () => {
+    this.disconnect();
+    this.setStatus("connecting");
+    const socket = new WebSocket(this.endpoint);
+    this.socket = socket;
+
+    socket.addEventListener("open", () => {
+      if (this.socket !== socket) return;
       this.reconnects = 0;
-      this.callbacks.onStatus("live");
+      this.setStatus("live");
       this.subscribe();
     });
 
-    this.socket.addEventListener("message", (message) => {
+    socket.addEventListener("message", (message) => {
+      if (this.socket !== socket) return;
       this.handleMessage(message.data);
     });
 
-    this.socket.addEventListener("close", () => {
-      if (this.socket) {
-        this.callbacks.onStatus("reconnecting");
-        this.scheduleReconnect();
-      }
+    socket.addEventListener("close", () => {
+      if (this.socket !== socket) return;
+      this.socket = null;
+      this.setStatus("reconnecting");
+      this.scheduleReconnect();
     });
 
-    this.socket.addEventListener("error", () => {
-      this.callbacks.onStatus("error");
-      this.socket?.close();
+    socket.addEventListener("error", () => {
+      if (this.socket !== socket) return;
+      this.setStatus("error");
+      socket.close();
     });
   }
 
   setMarket(market: Market): void {
+    if (this.market === market) return;
     this.market = market;
-    this.connect();
+    this.connect(true);
   }
 
   disconnect(): void {
     window.clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = 0;
     if (!this.socket) return;
     const socket = this.socket;
     this.socket = null;
@@ -71,6 +82,12 @@ export class HyperliquidClient {
     const delay = Math.min(8_000, 700 + this.reconnects * 900);
     this.reconnects += 1;
     this.reconnectTimer = window.setTimeout(() => this.connect(), delay);
+  }
+
+  private setStatus(status: "connecting" | "live" | "reconnecting" | "error"): void {
+    if (this.status === status) return;
+    this.status = status;
+    this.callbacks.onStatus(status);
   }
 
   private subscribe(): void {
@@ -128,6 +145,7 @@ export class HyperliquidClient {
         quantity,
         timestamp,
         source: "hyperliquid" as const,
+        liquidation: normalizeLiquidation(trade.liquidation),
       };
     });
   }
@@ -174,4 +192,14 @@ function firstPrice(value: unknown): number | null {
   if (!isObject(value)) return null;
   const price = Number(value.px);
   return Number.isFinite(price) ? price : null;
+}
+
+function normalizeLiquidation(value: unknown): TradeEvent["liquidation"] {
+  if (!isObject(value)) return undefined;
+  const markPrice = Number(value.markPx);
+  return {
+    markPrice: Number.isFinite(markPrice) ? markPrice : undefined,
+    method: typeof value.method === "string" ? value.method : undefined,
+    liquidatedUser: typeof value.liquidatedUser === "string" ? value.liquidatedUser : undefined,
+  };
 }

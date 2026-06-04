@@ -2,6 +2,7 @@ import { clamp } from "../utils/format";
 import type { FlowSignal, ScannerSettings, Side, TradeEvent } from "../types";
 import { MARKET_CONFIG } from "../config/markets";
 import { FluidSimulation } from "./fluid/FluidSimulation";
+import { shapeTrade } from "../synth/tradeMapping";
 
 interface Particle {
   x: number;
@@ -25,10 +26,10 @@ const COLORS: Record<Side | "cascade" | "absorption" | "core", [number, number, 
 
 const FLUID_PRESET = {
   densityDissipation: 1,
-  velocityDissipation: 2.38,
+  velocityDissipation: 1.67,
   pressure: 0.62,
   vorticity: 0,
-  splatRadius: 0.18,
+  splatRadius: 0.75,
   bloomIntensity: 0.8,
   bloomThreshold: 0.6,
   sunraysWeight: 1,
@@ -40,6 +41,7 @@ export class LiquidRenderer {
   private fluid: FluidSimulation | null = null;
   private particles: Particle[] = [];
   private lastFrame = performance.now();
+  private lastFluidFrame = 0;
   private lastAmbientSplat = 0;
   private pressure = 0;
   private pressureBias = 0;
@@ -49,7 +51,8 @@ export class LiquidRenderer {
     this.canvas = canvas;
     try {
       this.fluid = new FluidSimulation(canvas);
-    } catch {
+    } catch (error) {
+      console.error("Three water renderer failed; falling back to 2D renderer", error);
       const context = canvas.getContext("2d", { alpha: true });
       if (!context) throw new Error("Canvas context is unavailable");
       this.ctx = context;
@@ -68,28 +71,31 @@ export class LiquidRenderer {
   }
 
   pushTrade(trade: TradeEvent, settings: ScannerSettings): void {
-    const intensity = clamp(Math.log10(trade.size + 1) / 6, 0.25, 1.75) * settings.sensitivity;
+    const shaped = shapeTrade(trade, { baseDecay: 1, floor: settings.minPrintSize });
+    const intensity = clamp((0.35 + shaped.mag * 1.45) * settings.sensitivity, 0.25, 1.95);
     this.applyPressure(trade.side === "buy" ? intensity : -intensity);
 
     if (this.fluid) {
-      const pressureX = this.pressureToX();
-      const sideOffset = trade.side === "buy" ? 0.11 : -0.11;
-      const x = clamp(pressureX + sideOffset + (Math.random() - 0.5) * 0.12, 0.05, 0.95);
-      const y = this.sizeToY(trade.size, settings);
-      this.applyFluidPreset(0, intensity * 0.08);
+      const sideOffset = trade.side === "buy" ? -0.085 : 0.085;
+      const x = clamp(0.5 + sideOffset + this.pressureBias * 0.08 + (Math.random() - 0.5) * 0.045, 0.34, 0.66);
+      const y = clamp(0.5 + (Math.random() - 0.5) * 0.12, 0.38, 0.62);
+      const mass = shaped.mag;
+      const radius = this.splatRadius(intensity, false) * shaped.visual.radius * 3.6;
+      const force = shaped.visual.force * (2.25 + intensity * 0.95);
+      this.applyFluidPreset(0, intensity * 0.08 + mass * 0.12);
       this.fluid.splat({
-        x,
+        x: clamp(x + (Math.random() - 0.5) * 0.04, 0.28, 0.72),
         y: clamp(y + (Math.random() - 0.5) * 0.08, 0.08, 0.92),
-        dx: this.pressureBias * (1.2 + intensity * 1.2) + (trade.side === "buy" ? 0.42 : -0.42),
-        dy: (0.5 - y) * 0.9 + (Math.random() - 0.5) * 0.55,
+        dx: (trade.side === "buy" ? 1 : -1) * (1.15 + shaped.visual.spread * 0.38),
+        dy: (Math.random() - 0.5) * (0.42 + mass * 0.45),
         color: COLORS[trade.side],
-        radius: this.splatRadius(intensity, false),
-        force: 0.85 + intensity * 0.86,
+        radius,
+        force,
       });
       return;
     }
 
-    const count = Math.round(clamp(intensity * 8, 2, 28));
+    const count = shaped.visual.particles;
     this.pressure += trade.side === "buy" ? intensity : -intensity;
     this.turbulence += intensity * 0.06;
     this.spawn(trade.side, count, intensity, settings);
@@ -109,20 +115,23 @@ export class LiquidRenderer {
       const absorptionOffset = isAbsorption ? -Math.sign(this.pressureBias || (side === "buy" ? 1 : -1)) * 0.16 : 0;
       const x = isCascade ? pressureX : clamp(pressureX + absorptionOffset + (Math.random() - 0.5) * 0.16, 0.08, 0.92);
       const y = this.sizeToY(signal.size, settings);
-      this.applyFluidPreset(isCascade ? 0.02 : 0, signal.intensity * (isCascade ? 0.14 : 0.07));
+      const mass = this.sizeScore(signal.size, settings);
+      this.applyFluidPreset(isCascade ? 0.02 : 0, signal.intensity * (isCascade ? 0.14 : 0.07) + mass * 0.1);
       if (isCascade) {
         this.pushLiquidationShockwave(signal.intensity, signal.size, settings);
         return;
       }
 
+      const radius = this.splatRadius(signal.intensity, false) * (1 + mass * (isAbsorption ? 1.2 : 1.75));
+      const force = (isAbsorption ? 0.78 : 1) + signal.intensity * 0.56 + mass * (isAbsorption ? 1.15 : 1.7);
       this.fluid.splat({
         x,
         y: clamp(y + (Math.random() - 0.5) * 0.08, 0.08, 0.92),
-        dx: isCascade ? this.pressureBias * 4.2 + (Math.random() - 0.5) * 2.2 : this.pressureBias * (1.5 + signal.intensity) + (side === "buy" ? 0.36 : -0.36),
-        dy: isCascade ? (Math.random() - 0.5) * 4.2 : (0.5 - y) * 1.2 + (Math.random() - 0.5) * 0.9,
+        dx: this.pressureBias * (1.35 + signal.intensity + mass * 1.9) + (side === "buy" ? 0.34 : -0.34),
+        dy: (0.5 - y) * (1 + mass) + (Math.random() - 0.5) * 0.82,
         color: COLORS[colorKey],
-        radius: this.splatRadius(signal.intensity, isCascade),
-        force: isCascade ? 2.4 + signal.intensity * 0.8 : 1 + signal.intensity * 0.72,
+        radius,
+        force,
       });
       return;
     }
@@ -134,10 +143,13 @@ export class LiquidRenderer {
 
   render(settings: ScannerSettings): void {
     if (this.fluid) {
-      this.applyFluidPreset();
-      this.pushAmbientFluid(settings);
-      this.fluid.render();
-      this.pressureBias *= 0.992;
+      const now = performance.now();
+      if (now - this.lastFluidFrame >= 1000 / 45) {
+        this.lastFluidFrame = now;
+        this.applyFluidPreset();
+        this.fluid.render();
+        this.pressureBias *= 0.992;
+      }
       requestAnimationFrame(() => this.render(settings));
       return;
     }
@@ -210,7 +222,8 @@ export class LiquidRenderer {
     const direction = this.pressureBias >= 0 ? 1 : -1;
     const startX = direction > 0 ? 0.08 : 0.92;
     const force = 2.8 + intensity * 1.2;
-    const radius = this.splatRadius(intensity, true);
+    const mass = this.sizeScore(size, settings);
+    const radius = this.splatRadius(intensity, true) * (1 + mass * 1.25);
     const y = this.sizeToY(size, settings);
     const rows = [-0.18, -0.06, 0.06, 0.18].map((offset) => clamp(y + offset, 0.08, 0.92));
 
@@ -223,7 +236,7 @@ export class LiquidRenderer {
         dy: (phase - 0.5) * (1.5 + settings.turbulence),
         color: COLORS.cascade,
         radius,
-        force: 2.6 + intensity * 0.7,
+        force: 2.4 + intensity * 0.7 + mass * 2.1,
       });
     });
 
@@ -234,7 +247,7 @@ export class LiquidRenderer {
       dy: 0,
       color: COLORS.core,
       radius: radius * 1.45,
-      force: 3.4 + intensity,
+      force: 3.2 + intensity + mass * 2.4,
     });
   }
 
@@ -254,9 +267,17 @@ export class LiquidRenderer {
     return clamp(0.9 - clamp(score, 0, 1) * 0.78, 0.1, 0.9);
   }
 
+  private sizeScore(size: number, settings: ScannerSettings): number {
+    const config = MARKET_CONFIG[settings.market];
+    const min = Math.max(1, settings.minPrintSize || config.minPrintSize);
+    const max = Math.max(min * 3, config.clusterSize * 3.5);
+    const score = Math.log(Math.max(size, min) / min) / Math.log(max / min);
+    return clamp(score, 0, 1.35);
+  }
+
   private splatRadius(intensity: number, isLiquidation: boolean): number {
     const base = FLUID_PRESET.splatRadius / 100;
-    return base * (isLiquidation ? 7.2 : 3.6) + intensity * (isLiquidation ? 0.0052 : 0.0028);
+    return base * (isLiquidation ? 8.4 : 4.8) + intensity * (isLiquidation ? 0.0062 : 0.0052);
   }
 
   private applyFluidPreset(densityLift = 0, curlLift = 0): void {

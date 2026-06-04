@@ -1,0 +1,17 @@
+// Hyperliquid L1 Gateway, Dwellir-compatible v1 proto.
+syntax = "proto3";
+
+package hyperliquid_l1_gateway.v1;
+
+service HyperLiquidL1Gateway {
+  rpc StreamBlockFills(Timestamp) returns (stream BlockFills) {}
+}
+
+message Timestamp {
+  int64 timestamp = 1;
+}
+
+message BlockFills {
+  // JSON-encoded object conforming to Hyperliquid node_fills_by_block.
+  bytes data = 1;
+}
