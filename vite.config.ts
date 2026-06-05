@@ -76,6 +76,7 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           main: resolve(__dirname, "index.html"),
+          visuals: resolve(__dirname, "visuals.html"),
           synth: resolve(__dirname, "synth.html"),
           tape: resolve(__dirname, "tape.html"),
         },

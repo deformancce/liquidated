@@ -1,0 +1,246 @@
+:root {
+  color-scheme: dark;
+  --bg: #020506;
+  --panel: rgba(5, 12, 13, 0.48);
+  --line: rgba(128, 255, 221, 0.18);
+  --text: #effff9;
+  --muted: #7d918c;
+  --buy: #42f5b6;
+  --sell: #ff5f7d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+select {
+  font: inherit;
+}
+
+.visual-lab {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  min-height: 620px;
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(91, 255, 214, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(91, 255, 214, 0.026) 1px, transparent 1px),
+    linear-gradient(145deg, #020506 0%, #061111 46%, #030607 100%);
+  background-size: 52px 52px, 52px 52px, auto;
+}
+
+#visualCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.feed-panel,
+.feed-control,
+.feed-toggle,
+.segment,
+.status-row {
+  border: 1px solid rgba(128, 255, 221, 0.1);
+  background: rgba(5, 12, 13, 0.34);
+  backdrop-filter: blur(12px) saturate(1.05);
+}
+
+.feed-panel {
+  position: absolute;
+  z-index: 3;
+  top: 18px;
+  left: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: min(980px, calc(100vw - 36px));
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.feed-label {
+  margin-right: 4px;
+  color: var(--buy);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.feed-control {
+  display: grid;
+  gap: 3px;
+  min-width: 84px;
+  height: 38px;
+  padding: 5px 9px;
+  border-radius: 7px;
+}
+
+.feed-control span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+select {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.segment {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 116px;
+  height: 38px;
+  padding: 4px;
+  border-radius: 7px;
+}
+
+.feed-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  width: 172px;
+  height: 38px;
+  padding: 4px;
+  border-radius: 7px;
+}
+
+.status-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 7px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.status-light {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--sell);
+  box-shadow: 0 0 18px currentColor;
+}
+
+.status-light.live {
+  background: var(--buy);
+}
+
+.test-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding-top: 2px;
+}
+
+.button-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(86px, 1fr));
+  gap: 7px;
+  width: 100%;
+}
+
+button {
+  min-height: 36px;
+  border: 1px solid rgba(128, 255, 221, 0.16);
+  border-radius: 7px;
+  padding: 0 11px;
+  background: rgba(255, 255, 255, 0.052);
+  color: var(--text);
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.segment button,
+.feed-toggle button {
+  min-height: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+button:hover,
+button.active,
+.segment button.active,
+.feed-toggle button.active {
+  border-color: rgba(66, 245, 182, 0.44);
+  background: rgba(66, 245, 182, 0.11);
+  color: var(--text);
+}
+
+button[data-side="sell"]:hover {
+  border-color: rgba(255, 95, 125, 0.46);
+  background: rgba(255, 95, 125, 0.12);
+}
+
+.readout {
+  flex: 1 1 auto;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 750;
+  text-align: right;
+}
+
+@media (max-width: 760px) {
+  body {
+    overflow: auto;
+  }
+
+  .visual-lab {
+    min-height: 100vh;
+  }
+
+  .feed-panel {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: calc(100vw - 24px);
+    margin: 12px;
+  }
+
+  .button-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .test-row {
+    flex-wrap: wrap;
+  }
+
+  .readout {
+    text-align: left;
+  }
+}

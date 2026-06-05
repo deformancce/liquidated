@@ -37,11 +37,11 @@ interface ActiveTint {
   strength: number;
 }
 
-const FBO_WIDTH = 512;
-const FBO_HEIGHT = 256;
+const FBO_WIDTH = 640;
+const FBO_HEIGHT = 320;
 const MAX_LOCAL_TINTS = 16;
 const MAX_PENDING_DROPS = 24;
-const DROPS_PER_FRAME = 2;
+const DROPS_PER_FRAME = 3;
 
 const HEIGHTMAP_FRAGMENT = `
   #define PI 3.1415926538
@@ -62,8 +62,13 @@ const HEIGHTMAP_FRAGMENT = `
     vec4 west = texture2D(heightmap, uv + vec2(-cellSize.x, 0.0));
 
     float newHeight = ((north.x + south.x + east.x + west.x) * 0.5 - heightmapValue.y) * viscosityConstant;
-    float mousePhase = clamp(length((uv - vec2(0.5)) * vec2(GEOM_WIDTH, GEOM_HEIGHT) - vec2(mousePos.x, -mousePos.y)) * PI / mouseSize, 0.0, PI);
-    newHeight += (cos(mousePhase) + 1.0) * waveheightMultiplier;
+    float dist = length((uv - vec2(0.5)) * vec2(GEOM_WIDTH, GEOM_HEIGHT) - vec2(mousePos.x, -mousePos.y));
+    float norm = dist / max(mouseSize, 1.0);
+    float envelope = smoothstep(1.0, 0.0, norm);
+    float core = exp(-norm * norm * 7.5);
+    float ring = sin((1.0 - norm) * PI) * envelope;
+    float trough = -0.28 * smoothstep(0.34, 0.74, norm) * smoothstep(1.0, 0.72, norm);
+    newHeight += (core * 0.78 + ring * 0.42 + trough) * waveheightMultiplier;
 
     heightmapValue.y = heightmapValue.x;
     heightmapValue.x = newHeight;
@@ -99,8 +104,8 @@ const WATER_FRAGMENT = `
     float right = texture2D(heightmap, vUv + vec2(texelSize.x, 0.0)).x;
     float top = texture2D(heightmap, vUv + vec2(0.0, texelSize.y)).x;
     float bottom = texture2D(heightmap, vUv - vec2(0.0, texelSize.y)).x;
-    vec3 normal = normalize(vec3((left - right) * 12.0, (bottom - top) * 12.0, 1.0));
-    vec2 refractedUv = clamp(vUv + normal.xy * 0.08 + vec2(h * 0.02, -h * 0.018), 0.0, 1.0);
+    vec3 normal = normalize(vec3((left - right) * 8.5, (bottom - top) * 8.5, 1.0));
+    vec2 refractedUv = clamp(vUv + normal.xy * 0.052 + vec2(h * 0.014, -h * 0.012), 0.0, 1.0);
     vec3 base = texture2D(map, refractedUv).rgb;
     base = pow(base, vec3(0.88)) * 1.08;
     vec3 localTint = vec3(0.0);
@@ -109,15 +114,15 @@ const WATER_FRAGMENT = `
       if (i >= localTintCount) break;
       vec2 delta = (vUv - localTintPositions[i]) * vec2(GEOM_WIDTH, GEOM_HEIGHT);
       float falloff = smoothstep(localTintRadii[i], 0.0, length(delta));
-      float waveFocus = 0.52 + clamp(abs(h) * 6.0, 0.0, 0.65);
+      float waveFocus = 0.48 + clamp(abs(h) * 4.8, 0.0, 0.52);
       float tintAmount = falloff * localTintStrengths[i] * waveFocus;
       localTint += localTintColors[i] * tintAmount;
       localMask += tintAmount;
     }
     if (localMask > 0.001) {
       vec3 tintColor = localTint / localMask;
-      vec3 tintWash = base * (vec3(0.62) + tintColor * 1.18) + tintColor * 0.22;
-      base = mix(base, tintWash, clamp(localMask, 0.0, 0.88));
+      vec3 tintWash = mix(base * 0.42, tintColor, 0.72) + tintColor * 0.22;
+      base = mix(base, tintWash, clamp(localMask * 1.18, 0.0, 0.96));
     }
     vec3 lightDir = normalize(vec3(-0.28, 0.38, 0.9));
     vec3 viewDir = vec3(0.0, 0.0, 1.0);
@@ -201,9 +206,9 @@ export class FluidSimulation {
   splat(input: FluidSplat): void {
     const x = clamp(input.x, 0, 1);
     const y = clamp(input.y, 0, 1);
-    const radius = clamp(input.radius * Math.min(this.geomWidth, this.geomHeight), 12, 360);
-    const motion = clamp(Math.hypot(input.dx, input.dy) * 0.052, 0, 0.48);
-    const strength = clamp(input.force * 0.105 + motion, 0.14, 1.8);
+    const radius = clamp(input.radius * Math.min(this.geomWidth, this.geomHeight), 18, 300);
+    const motion = clamp(Math.hypot(input.dx, input.dy) * 0.044, 0, 0.42);
+    const strength = clamp(input.force * 0.088 + motion, 0.1, 1.35);
     this.pendingDrops.push({
       x: (x - 0.5) * this.geomWidth,
       y: (0.5 - y) * this.geomHeight,

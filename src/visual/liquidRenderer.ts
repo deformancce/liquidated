@@ -17,8 +17,8 @@ interface Particle {
 }
 
 const COLORS: Record<Side | "cascade" | "absorption" | "core", [number, number, number]> = {
-  buy: [118, 218, 168],
-  sell: [235, 104, 119],
+  buy: [42, 255, 182],
+  sell: [255, 55, 92],
   cascade: [238, 196, 86],
   absorption: [188, 222, 232],
   core: [242, 241, 236],
@@ -76,22 +76,35 @@ export class LiquidRenderer {
     this.applyPressure(trade.side === "buy" ? intensity : -intensity);
 
     if (this.fluid) {
-      const sideOffset = trade.side === "buy" ? -0.085 : 0.085;
-      const x = clamp(0.5 + sideOffset + this.pressureBias * 0.08 + (Math.random() - 0.5) * 0.045, 0.34, 0.66);
-      const y = clamp(0.5 + (Math.random() - 0.5) * 0.12, 0.38, 0.62);
+      const isBuy = trade.side === "buy";
       const mass = shaped.mag;
-      const radius = this.splatRadius(intensity, false) * shaped.visual.radius * 3.6;
+      const sourceX = isBuy ? 0.44 : 0.56;
+      const sourceY = isBuy ? 0.56 : 0.44;
+      const x = clamp(sourceX + this.pressureBias * 0.035 + (Math.random() - 0.5) * 0.035, 0.36, 0.64);
+      const y = clamp(sourceY + (Math.random() - 0.5) * 0.055, 0.36, 0.64);
+      const radius = this.splatRadius(intensity, false) * shaped.visual.radius * 3.25;
       const force = shaped.visual.force * (2.25 + intensity * 0.95);
       this.applyFluidPreset(0, intensity * 0.08 + mass * 0.12);
       this.fluid.splat({
-        x: clamp(x + (Math.random() - 0.5) * 0.04, 0.28, 0.72),
-        y: clamp(y + (Math.random() - 0.5) * 0.08, 0.08, 0.92),
-        dx: (trade.side === "buy" ? 1 : -1) * (1.15 + shaped.visual.spread * 0.38),
-        dy: (Math.random() - 0.5) * (0.42 + mass * 0.45),
+        x,
+        y,
+        dx: (isBuy ? 1 : -1) * (0.54 + shaped.visual.spread * 0.18),
+        dy: (isBuy ? -1 : 1) * (0.24 + mass * 0.3) + (Math.random() - 0.5) * 0.12,
         color: COLORS[trade.side],
         radius,
         force,
       });
+      if (mass > 0.12) {
+        this.fluid.splat({
+          x: clamp(0.5 + (isBuy ? -0.012 : 0.012) + this.pressureBias * 0.025, 0.43, 0.57),
+          y: clamp(0.5 + (isBuy ? -0.014 : 0.014), 0.43, 0.57),
+          dx: (isBuy ? 0.18 : -0.18) * (1 + mass),
+          dy: (isBuy ? -0.12 : 0.12) * (1 + mass),
+          color: COLORS[trade.side],
+          radius: radius * clamp(0.48 + mass * 0.85, 0.52, 1.24),
+          force: force * clamp(0.36 + mass * 0.64, 0.42, 1.08),
+        });
+      }
       return;
     }
 

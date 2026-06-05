@@ -7,3 +7,6 @@ coverage/
 __pycache__/
 *.pyc
 src/visual/fluid/FluidSimulation 2.ts
+
+# Local Netlify folder
+.netlify

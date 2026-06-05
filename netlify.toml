@@ -1,0 +1,23 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[[redirects]]
+  from = "/"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/synth"
+  to = "/synth.html"
+  status = 200
+
+[[redirects]]
+  from = "/tape"
+  to = "/tape.html"
+  status = 200
+
+[[redirects]]
+  from = "/visuals"
+  to = "/visuals.html"
+  status = 200
