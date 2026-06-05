@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "description": "Audio-visual crypto flow instrument.",
+  "homepage": "https://liquidated-976.netlify.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deformancce/liquidated.git"
+  },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "start": "vite --host 0.0.0.0",

@@ -2,12 +2,14 @@
 
 Liquidated is an audio-visual orderflow instrument for Hyperliquid perpetual markets. It turns public buy/sell flow into a live tape, a trade-triggered synth, and liquid WebGL visuals where order size controls impact, spread, colour, and sound.
 
+Live: https://liquidated-976.netlify.app
+
 The project is built as a Vite + TypeScript app with three views:
 
-- `index.html` - the full Liquidated experience: live tape, synth trigger path, and centre-weighted liquid visuals.
-- `tape.html` - a raw/aggr-style Hyperliquid buy/sell tape for comparing public trade prints.
-- `synth.html` - a standalone Tone.js instrument driven by Hyperliquid trade flow.
-- `visuals.html` - an isolated visual lab for tuning buy/sell drops and impact waves.
+- Full experience: https://liquidated-976.netlify.app
+- Buy/sell tape: https://liquidated-976.netlify.app/tape
+- Flow synth: https://liquidated-976.netlify.app/synth
+- Visual lab: https://liquidated-976.netlify.app/visuals
 
 ## Run Locally
 
@@ -48,3 +50,5 @@ The app builds to `dist/` and can be deployed as a static site:
 npm run build
 npx netlify deploy --prod --dir=dist
 ```
+
+Production deploys currently run on Netlify: https://liquidated-976.netlify.app
