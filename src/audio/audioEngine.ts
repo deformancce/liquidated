@@ -1,4 +1,5 @@
 import { MARKET_CONFIG } from "../config/markets";
+import { primeIosAudioSession } from "./iosAudioSession";
 import { RingsWasmVoice } from "../resonator/ringsDspClient";
 import type { FlowSignal, Market, ScannerSettings, Side, TradeEvent } from "../types";
 
@@ -112,7 +113,10 @@ export class AudioEngine {
     }
     // Unlock the audio context synchronously inside the user gesture; iOS Safari
     // refuses to start audio once we're behind the WASM-load await in ensure().
+    // primeIosAudioSession() also flips iOS into "playback" so the ring switch
+    // doesn't silence us — both must run before the first await.
     this.voice ??= new RingsWasmVoice();
+    primeIosAudioSession();
     this.voice.unlock();
     await this.ensure();
     this.enabled = enabled;
