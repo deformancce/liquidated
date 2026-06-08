@@ -393,7 +393,10 @@ export class FluidSimulation {
       const alpha = Math.min(0.92, splat.strength * fade) * pulse;
       const rgb = splat.side === "buy" ? [38, 255, 148] : [255, 52, 76];
       const x = splat.u * w;
-      const y = splat.v * h;
+      // The canvas→screen Y mapping differs by orientation: landscape needs (1 - v) to
+      // land the flash on the drop, portrait needs v (green buys end up at the bottom,
+      // red sells at the top, matching the dominance glow). See drop mapping above.
+      const y = (this.orientation === "portrait" ? splat.v : 1 - splat.v) * h;
       ctx.save();
       ctx.translate(x, y);
       ctx.scale(blobScaleX, 1);

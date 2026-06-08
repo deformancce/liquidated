@@ -19,6 +19,8 @@ const DEFAULT_AGGREGATE = { windowMs: 250, bucket: 1 };
 const MIN_PRINT_SIZE = 1_000;
 const MAX_PRINT_SIZE = 5_000_000;
 const RANGE_STEPS = 1_000;
+// One extra slider tick past $5M means "no upper limit" (∞).
+const UNCAPPED_PRINT_SIZE = Infinity;
 const aggregateState = { ...DEFAULT_AGGREGATE };
 
 const elements = {
@@ -73,17 +75,17 @@ const stats = {
 
 const TAPE_MIN_PRINT_SIZE = MIN_PRINT_SIZE;
 const MARKET_TAPE_PROFILE: Record<Market, { bucket: number; window: number; minSize: number; maxSize: number }> = {
-  BTC: { bucket: 1, window: 250, minSize: MIN_PRINT_SIZE, maxSize: MAX_PRINT_SIZE },
-  ETH: { bucket: 0.1, window: 250, minSize: MIN_PRINT_SIZE, maxSize: MAX_PRINT_SIZE },
-  SOL: { bucket: 0.01, window: 250, minSize: MIN_PRINT_SIZE, maxSize: MAX_PRINT_SIZE },
-  HYPE: { bucket: 0.01, window: 500, minSize: MIN_PRINT_SIZE, maxSize: MAX_PRINT_SIZE },
+  BTC: { bucket: 1, window: 250, minSize: MIN_PRINT_SIZE, maxSize: UNCAPPED_PRINT_SIZE },
+  ETH: { bucket: 0.1, window: 250, minSize: MIN_PRINT_SIZE, maxSize: UNCAPPED_PRINT_SIZE },
+  SOL: { bucket: 0.01, window: 250, minSize: MIN_PRINT_SIZE, maxSize: UNCAPPED_PRINT_SIZE },
+  HYPE: { bucket: 0.01, window: 500, minSize: MIN_PRINT_SIZE, maxSize: UNCAPPED_PRINT_SIZE },
 };
 
 let settings: ScannerSettings = {
   market: "BTC",
   mode: "live",
   minPrintSize: TAPE_MIN_PRINT_SIZE,
-  maxPrintSize: MAX_PRINT_SIZE,
+  maxPrintSize: UNCAPPED_PRINT_SIZE,
   sensitivity: 1.15,
   clusterWindowMs: aggregateState.windowMs,
   volume: 0.28,
@@ -464,8 +466,10 @@ function syncRangeControls(): { minPrintSize: number; maxPrintSize: number } {
 }
 
 function updateRangeReadout(input: HTMLInputElement, output: HTMLElement, value: number): void {
-  output.textContent = money(value);
-  output.style.left = `${sizeToRangeProgress(value) * input.offsetWidth}px`;
+  const uncapped = !Number.isFinite(value);
+  output.textContent = uncapped ? "∞" : money(value);
+  const progress = uncapped ? 1 : sizeToRangeProgress(value);
+  output.style.left = `${progress * input.offsetWidth}px`;
 }
 
 function rangeProgress(value: number): number {
@@ -473,9 +477,10 @@ function rangeProgress(value: number): number {
 }
 
 function sliderValueToSize(input: HTMLInputElement): number {
-  const min = Number(input.min);
-  const max = Number(input.max);
-  const progress = Math.min(1, Math.max(0, (Number(input.value) - min) / Math.max(1, max - min)));
+  const sliderValue = Number(input.value);
+  // The one extra tick past the $1k–$5M log range (value > RANGE_STEPS) means "no upper limit".
+  if (sliderValue > RANGE_STEPS) return UNCAPPED_PRINT_SIZE;
+  const progress = Math.min(1, Math.max(0, sliderValue / RANGE_STEPS));
   const logMin = Math.log(MIN_PRINT_SIZE);
   const logMax = Math.log(MAX_PRINT_SIZE);
   const value = Math.exp(logMin + progress * (logMax - logMin));
@@ -483,6 +488,8 @@ function sliderValueToSize(input: HTMLInputElement): number {
 }
 
 function sizeToSliderValue(value: number): number {
+  // ∞ / anything above $5M sits on the extra tick past the log range.
+  if (!Number.isFinite(value) || value > MAX_PRINT_SIZE) return RANGE_STEPS + 1;
   return Math.round(sizeToRangeProgress(value) * RANGE_STEPS);
 }
 

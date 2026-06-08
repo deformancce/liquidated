@@ -46,10 +46,10 @@ void main() {
     #ifdef USE_MAP
 
         vec3 vnormal = normalize( vNormal );
-        // adding normal.xy to the map uv is to add the rippling effect to the image as well
-        // if this isn't done, the image itself wouldn't be rippled upon,
-        // and you'd only see the waves' shades added upon the unmoved image
-        vec4 sampledDiffuseColor = texture2D( map, vMapUv + vnormal.xy );
+        // adding normal.xy to the map uv ripples the image with the waves. Keep only a
+        // fraction of it so the coloured flash stays aligned with the drop that spawned
+        // it instead of being pushed off-centre by the wave it sits on.
+        vec4 sampledDiffuseColor = texture2D( map, vMapUv + vnormal.xy * 0.3 );
 
         #ifdef DECODE_VIDEO_TEXTURE
 
