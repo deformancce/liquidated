@@ -13,6 +13,10 @@
 
       <section class="feed-panel" aria-label="Market feed">
         <img class="brand-logo" src="/assets/liquidated_logo.svg" alt="Liquidated">
+        <button class="burger" id="burgerToggle" type="button" aria-label="Menu" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="row-break" aria-hidden="true"></div>
         <details class="pair-menu">
           <summary id="symbolSummary">BTC</summary>
           <div class="pair-options" aria-label="Instrument">
@@ -37,8 +41,7 @@
         </div>
         <details class="group-menu">
           <summary>
-            <span>Group</span>
-            <b id="aggregateSummary">250ms / $1</b>
+            <span>Grouping</span>
           </summary>
           <div class="group-options" aria-label="Aggregation settings">
             <div>
@@ -61,6 +64,8 @@
         <div class="segment" aria-label="Data mode">
           <button id="offButton" class="active" type="button">Off</button>
           <button id="liveButton" type="button">Live</button>
+          <span id="statusLight" class="status-light"></span>
+          <span id="statusText">Connecting</span>
         </div>
         <details class="resonator-menu">
           <summary>Audio settings</summary>
@@ -134,13 +139,10 @@
             <button id="smoothWater" class="save-audio-settings" type="button">smoothWater</button>
           </div>
         </details>
-        <div class="status-row">
-          <span id="statusLight" class="status-light"></span>
-          <span id="statusText">Connecting</span>
-        </div>
       </section>
 
       <aside class="side-panel" aria-label="Flow tape">
+        <button class="tape-handle" id="tapeHandle" type="button" aria-label="Tape ein-/ausfahren"></button>
         <ol id="eventTape" class="event-tape" aria-label="Recent flow events"></ol>
         <div class="metric-grid">
           <div>
@@ -171,6 +173,8 @@
           </div>
         </div>
       </aside>
+
+      <a class="info-link" href="https://github.com/deformancce/liquidated/blob/main/docs/how-it-works.md" target="_blank" rel="noopener noreferrer" aria-label="What is Liquidated? — Documentation" title="What is Liquidated? — Documentation">i</a>
 
     </main>
 

@@ -120,6 +120,84 @@ input {
   filter: brightness(0) invert(1);
 }
 
+/* Small "i" circle linking to the GitHub documentation — pinned bottom-left */
+.info-link {
+  position: fixed;
+  z-index: 8;
+  left: 16px;
+  bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: rgba(4, 9, 10, 0.55);
+  color: rgba(239, 255, 249, 0.78);
+  font-family: ui-serif, Georgia, "Times New Roman", serif;
+  font-size: 13px;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+  /* The italic serif "i" leans right, so nudge the glyph back to the optical centre of the circle */
+  padding-right: 2px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.info-link:hover {
+  border-color: var(--line);
+  color: var(--buy);
+}
+
+/* Mobile-only chrome — hidden on desktop, activated in the max-width media query. */
+.burger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  width: 40px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: rgba(4, 9, 10, 0.55);
+  cursor: pointer;
+}
+
+.burger span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--text);
+  transition: transform 0.2s, opacity 0.2s;
+}
+
+.app-shell.menu-open .burger span:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+
+.app-shell.menu-open .burger span:nth-child(2) {
+  opacity: 0;
+}
+
+.app-shell.menu-open .burger span:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
+.tape-handle {
+  display: none;
+}
+
+.row-break {
+  display: none;
+}
+
 .feed-control {
   display: grid;
   gap: 3px;
@@ -132,7 +210,7 @@ input {
 .pair-menu {
   position: relative;
   height: 32px;
-  min-width: 62px;
+  min-width: 78px;
   border: 1px solid rgba(255, 255, 255, 0.075);
   border-radius: 6px;
   background: rgba(4, 9, 10, 0.38);
@@ -140,10 +218,12 @@ input {
 }
 
 .pair-menu summary {
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   height: 100%;
-  place-items: center;
-  padding: 0 9px;
+  padding: 0 10px;
   color: var(--text);
   cursor: pointer;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -156,8 +236,34 @@ input {
   display: none;
 }
 
+/* Down-chevron hinting the dropdown; flips when open */
+.pair-menu summary::after,
+.group-menu summary::after {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid rgba(239, 255, 249, 0.6);
+  transition: transform 0.15s ease;
+}
+
+.pair-menu[open] summary::after,
+.group-menu[open] summary::after {
+  transform: rotate(180deg);
+}
+
 .pair-menu[open] {
   border-color: rgba(239, 255, 249, 0.22);
+}
+
+/* Any open dropdown lifts its whole box (incl. the absolute popup) above the
+   neighbouring controls and the mobile tape sheet so it's never covered. */
+.pair-menu[open],
+.group-menu[open],
+.resonator-menu[open],
+.liquid-menu[open] {
+  z-index: 30;
 }
 
 .pair-options {
@@ -216,7 +322,7 @@ input {
 .group-menu {
   position: relative;
   height: 32px;
-  min-width: 126px;
+  min-width: 112px;
   border: 1px solid rgba(255, 255, 255, 0.075);
   border-radius: 6px;
   background: rgba(4, 9, 10, 0.38);
@@ -225,11 +331,11 @@ input {
 
 .group-menu summary {
   display: grid;
-  grid-template-columns: 36px 1fr;
+  grid-template-columns: 1fr auto;
   align-items: center;
   gap: 7px;
   height: 100%;
-  padding: 4px 7px;
+  padding: 4px 9px;
   cursor: pointer;
   list-style: none;
 }
@@ -245,17 +351,6 @@ input {
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-.group-menu summary b {
-  overflow: hidden;
-  color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
-  font-weight: 850;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .group-menu[open] {
@@ -425,11 +520,28 @@ select {
 
 .segment {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  width: 86px;
+  /* Match the Raw/Aggregated pill (1fr 1.4fr); the trailing auto column holds the live dot */
+  grid-template-columns: 1fr 1.4fr auto;
+  /* Default stretch lets the buttons fill the full pill height, like Raw/Aggregated;
+     the dot is re-centred vertically via align-self below */
+  /* 132px (feed-toggle footprint) + room for the dot, so Off/Live read the same size as Raw/Aggregated */
+  width: 148px;
   height: 32px;
-  padding: 3px;
+  /* Extra right padding gives the live dot a little breathing room from the box edge */
+  padding: 3px 6px 3px 3px;
   border-radius: 6px;
+  /* Desktop: sit at the right end, after Audio/Liquid settings */
+  order: 14;
+}
+
+/* Live indicator dot lives inside the Off/Live pill, right of Live */
+.segment .status-light {
+  align-self: center;
+  margin-left: 6px;
+}
+
+.segment #statusText {
+  display: none;
 }
 
 .feed-toggle {
@@ -500,6 +612,7 @@ button {
 .status-light.live {
   color: var(--sell);
   background: var(--sell);
+  box-shadow: 0 0 8px rgba(255, 95, 125, 0.85), 0 0 2px rgba(255, 95, 125, 0.9);
 }
 
 .resonator-menu,
@@ -622,26 +735,6 @@ button {
   border: 0;
   background: linear-gradient(90deg, rgba(2, 5, 6, 0), rgba(2, 5, 6, 0.08));
   backdrop-filter: none;
-}
-
-.status-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  min-width: 22px;
-  height: 32px;
-  border: 0;
-  color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.status-row #statusText {
-  display: none;
 }
 
 .metric-grid {
@@ -788,42 +881,203 @@ button {
 
 @media (max-width: 820px) {
   body {
-    overflow: auto;
+    overflow: hidden;
   }
 
   .app-shell {
+    height: 100dvh;
     min-height: 100dvh;
-    height: auto;
-    padding-bottom: 18px;
   }
 
-  .top-bar {
-    display: grid;
-    width: min(100% - 28px, 620px);
-    padding-top: 18px;
-  }
-
+  /* ── Top bar: logo left, off/live + burger right ─────────────────────── */
   .feed-panel {
-    position: relative;
-    left: auto;
-    flex-wrap: wrap;
-    width: min(100% - 28px, 620px);
-    margin: 12px auto 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: none;
+    margin: 0;
     transform: none;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    row-gap: 6px;
+    flex-wrap: wrap;
+    /* Top padding matches the bar→first-menu-row gap (2×row-gap) for symmetry */
+    padding: 12px 14px 10px;
+    background: rgba(3, 8, 9, 0.82);
+    backdrop-filter: blur(12px) saturate(0.9);
+    border-bottom: 1px solid var(--line);
   }
 
+  /* Open menu must float above the tape sheet, and its absolute dropdown popups
+     must not be clipped — so keep overflow visible and lift the stacking context. */
+  .app-shell.menu-open .feed-panel {
+    z-index: 9;
+    overflow: visible;
+  }
+
+  /* Forces the dropdown options onto their own rows below the top bar */
+  .row-break {
+    display: block;
+    order: 2;
+    flex: 0 0 100%;
+    height: 0;
+  }
+
+  .brand-logo {
+    order: 0;
+    margin-right: auto;
+    width: 116px;
+  }
+
+  /* Info circle sits bottom-left, just above the metrics sheet — nudged slightly right and down */
+  .info-link {
+    bottom: 110px;
+    left: 18px;
+  }
+
+  .feed-panel > .segment {
+    order: 1;
+    flex: 0 0 auto;
+  }
+
+  .burger {
+    order: 2;
+    display: flex;
+  }
+
+  /* Everything else collapses behind the burger */
+  .feed-panel > .pair-menu,
+  .feed-panel > .feed-toggle,
+  .feed-panel > .range-control,
+  .feed-panel > .group-menu,
+  .feed-panel > .resonator-menu,
+  .feed-panel > .liquid-menu {
+    display: none;
+  }
+
+  /* Dropdown row 1: instrument (left) · raw/aggr · group share one line */
+  .feed-panel > .pair-menu {
+    order: 3;
+    flex: 0 0 auto;
+    min-width: 60px;
+  }
+  .feed-panel > .feed-toggle {
+    order: 4;
+    flex: 0 0 auto;
+    width: auto;
+    grid-template-columns: auto auto;
+  }
+  .feed-panel > .feed-toggle button {
+    padding: 0 11px;
+  }
+  .feed-panel > .group-menu {
+    order: 5;
+    flex: 1 1 auto;
+  }
+
+  /* Remaining controls each get their own full-width row below */
+  .feed-panel > .range-control {
+    order: 6;
+    flex: 1 1 100%;
+  }
+  .feed-panel > .resonator-menu {
+    order: 7;
+    flex: 1 1 100%;
+  }
+  .feed-panel > .liquid-menu {
+    order: 8;
+    flex: 1 1 100%;
+  }
+  .app-shell.menu-open .feed-panel > .pair-menu,
+  .app-shell.menu-open .feed-panel > .group-menu,
+  .app-shell.menu-open .feed-panel > .resonator-menu,
+  .app-shell.menu-open .feed-panel > .liquid-menu {
+    display: block;
+  }
+
+  .app-shell.menu-open .feed-panel > .feed-toggle {
+    display: flex;
+  }
+
+  .app-shell.menu-open .feed-panel > .range-control {
+    display: grid;
+  }
+
+  /* ── Bottom sheet: flow metrics always visible, tape pulls up above them ── */
   .side-panel {
     position: fixed;
-    width: min(180px, 38vw);
-    min-width: 132px;
-    padding-top: 0;
+    inset: auto 0 0 0;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: auto;
+    max-height: 94dvh;
+    z-index: 7;
+    flex-direction: column;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    /* Transparent like the original — only a faint bottom wash to seat the metrics */
+    background: linear-gradient(180deg, rgba(2, 5, 6, 0) 0%, rgba(2, 5, 6, 0.12) 62%, rgba(2, 5, 6, 0.34) 100%);
+    backdrop-filter: none;
+    box-shadow: none;
+    overflow: hidden;
   }
 
+  .tape-handle {
+    display: block;
+    flex: 0 0 auto;
+    width: 100%;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .tape-handle::before {
+    content: "";
+    display: block;
+    width: 44px;
+    height: 5px;
+    margin: 10px auto 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.28);
+  }
+
+  /* The tape is the collapsible part; the metric grid + pressure below it stay
+     pinned to the bottom of the screen at all times. */
   .event-tape {
-    height: 100%;
+    flex: 0 0 auto;
+    height: 0;
+    min-height: 0;
+    overflow-y: auto;
+    transition: height 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .app-shell.tape-open .event-tape {
+    height: min(56dvh, 460px);
+  }
+
+  .side-panel.dragging .event-tape {
+    transition: none;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: 6px 12px;
   }
 
   .metric-grid strong {
     font-size: 12px;
+  }
+
+  .meter-wrap {
+    padding: 6px 12px 14px;
   }
 }

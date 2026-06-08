@@ -4,6 +4,8 @@ Liquidated is an audio-visual orderflow instrument for Hyperliquid perpetual mar
 
 Live: https://liquidated-976.netlify.app
 
+**New here?** Read [What it is & how it works](docs/how-it-works.md) for a full walkthrough of the interface and the data → tape → synth → visuals pipeline.
+
 The project is built as a Vite + TypeScript app with three views:
 
 - Full experience: https://liquidated-976.netlify.app

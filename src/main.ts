@@ -40,7 +40,6 @@ const elements = {
   minSizeValue: mustQuery<HTMLElement>("#minSizeValue"),
   maxSize: mustQuery<HTMLInputElement>("#maxSize"),
   maxSizeValue: mustQuery<HTMLElement>("#maxSizeValue"),
-  aggregateSummary: mustQuery<HTMLElement>("#aggregateSummary"),
   aggregateOptions: [...document.querySelectorAll<HTMLButtonElement>("[data-aggregate-kind]")],
   saveAudioSettings: mustQuery<HTMLButtonElement>("#saveAudioSettings"),
   tape: mustQuery<HTMLOListElement>("#eventTape"),
@@ -425,8 +424,6 @@ function setAggregate(windowMs: number, bucket: number, shouldSync = true): void
 }
 
 function updateAggregateMenu(): void {
-  const bucket = aggregateState.bucket === 0 ? "exact" : `$${formatBucket(aggregateState.bucket)}`;
-  elements.aggregateSummary.textContent = `${formatWindowMs(aggregateState.windowMs)} / ${bucket}`;
   for (const option of elements.aggregateOptions) {
     const kind = option.dataset.aggregateKind;
     const value = Number(option.dataset.aggregateValue);
@@ -441,15 +438,6 @@ function updateAggregateMenu(): void {
 function baseAggregateLabel(option: HTMLButtonElement): string {
   option.dataset.aggregateLabel ??= option.textContent?.replace(/^✓\s*/, "") ?? "";
   return option.dataset.aggregateLabel;
-}
-
-function formatWindowMs(value: number): string {
-  return value >= 1000 ? `${value / 1000}s` : `${value}ms`;
-}
-
-function formatBucket(value: number): string {
-  if (value >= 1) return String(value);
-  return value.toFixed(value < 0.1 ? 2 : 1);
 }
 
 function syncRangeControls(): { minPrintSize: number; maxPrintSize: number } {
@@ -653,6 +641,64 @@ Object.values(elements.liquid).forEach((controlOrButton) => {
 });
 elements.liquid.smoothWater.addEventListener("click", () => renderer?.smoothWater());
 elements.saveAudioSettings.addEventListener("click", saveAudioSettings);
+
+// ── Mobile chrome: burger menu, draggable tape drawer, portrait visual ───────
+const appShell = mustQuery<HTMLElement>(".app-shell");
+const burgerToggle = mustQuery<HTMLButtonElement>("#burgerToggle");
+const tapePanel = mustQuery<HTMLElement>(".side-panel");
+const tapeHandle = mustQuery<HTMLButtonElement>("#tapeHandle");
+
+burgerToggle.addEventListener("click", () => {
+  const open = appShell.classList.toggle("menu-open");
+  burgerToggle.setAttribute("aria-expanded", String(open));
+});
+
+// On mobile the flow field is rotated so buys sink to the bottom and sells rise
+// to the top; keep it in sync with the layout breakpoint.
+const mobileMedia = window.matchMedia("(max-width: 820px)");
+const syncOrientation = () => renderer?.setOrientation(mobileMedia.matches ? "portrait" : "landscape");
+mobileMedia.addEventListener("change", syncOrientation);
+syncOrientation();
+
+// Grab/drag the tape up or down (it grows above the always-visible flow
+// metrics); a tap toggles, release snaps open or closed.
+const tapeMaxHeight = () => Math.min(window.innerHeight * 0.56, 460);
+let tapeDragStartY = 0;
+let tapeDragStartH = 0;
+let tapeDragging = false;
+let tapeDragMoved = false;
+let tapeCurrentH = 0;
+
+tapeHandle.addEventListener("pointerdown", (event) => {
+  tapeDragging = true;
+  tapeDragMoved = false;
+  tapeDragStartY = event.clientY;
+  tapeDragStartH = elements.tape.getBoundingClientRect().height;
+  tapeCurrentH = tapeDragStartH;
+  tapePanel.classList.add("dragging");
+  tapeHandle.setPointerCapture(event.pointerId);
+});
+
+tapeHandle.addEventListener("pointermove", (event) => {
+  if (!tapeDragging) return;
+  const dy = tapeDragStartY - event.clientY; // drag up → grow
+  if (Math.abs(dy) > 4) tapeDragMoved = true;
+  tapeCurrentH = Math.min(tapeMaxHeight(), Math.max(0, tapeDragStartH + dy));
+  elements.tape.style.height = `${tapeCurrentH}px`;
+});
+
+function endTapeDrag(event: PointerEvent): void {
+  if (!tapeDragging) return;
+  tapeDragging = false;
+  tapePanel.classList.remove("dragging");
+  elements.tape.style.height = "";
+  if (tapeHandle.hasPointerCapture(event.pointerId)) tapeHandle.releasePointerCapture(event.pointerId);
+  const open = tapeDragMoved ? tapeCurrentH > tapeMaxHeight() / 2 : !appShell.classList.contains("tape-open");
+  appShell.classList.toggle("tape-open", open);
+}
+
+tapeHandle.addEventListener("pointerup", endTapeDrag);
+tapeHandle.addEventListener("pointercancel", endTapeDrag);
 loadAudioSettings();
 syncResonatorControls();
 syncLiquidControls();

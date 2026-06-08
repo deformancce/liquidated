@@ -94,9 +94,12 @@ export class FluidSimulation {
   private camera: THREE.OrthographicCamera;
   private waterMesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   private waterUniforms: THREE.ShaderMaterial["uniforms"];
-  private gpuCompute: GPUComputationRenderer;
-  private heightmapVariable: Variable;
-  private smoothShader: THREE.ShaderMaterial;
+  private gpuCompute!: GPUComputationRenderer;
+  private heightmapVariable!: Variable;
+  private smoothShader!: THREE.ShaderMaterial;
+  private fboW = FBO_WIDTH;
+  private fboH = FBO_HEIGHT;
+  private sizeScale = 1;
   private pendingDrops: PendingDrop[] = [];
   private dyeSplats: DyeSplat[] = [];
   private reflectionCanvas = document.createElement("canvas");
@@ -105,6 +108,7 @@ export class FluidSimulation {
   private geomWidth = 1;
   private geomHeight = 1;
   private sideDominance = 0;
+  private orientation: "landscape" | "portrait" = "landscape";
   private lastRender = performance.now();
   private elapsed = 0;
   private viscosity = 0.985;
@@ -142,12 +146,24 @@ export class FluidSimulation {
     this.scene.add(sun2);
 
     const material = this.createWaterMaterial();
-    this.waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, FBO_WIDTH, FBO_HEIGHT), material);
+    this.waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, this.fboW, this.fboH), material);
     this.waterMesh.matrixAutoUpdate = false;
     this.scene.add(this.waterMesh);
     this.waterUniforms = material.uniforms;
 
-    this.gpuCompute = new GPUComputationRenderer(FBO_WIDTH, FBO_HEIGHT, this.renderer);
+    this.buildCompute();
+
+    window.addEventListener("resize", () => this.resize());
+    this.resize();
+    this.drawReflectionTexture(0);
+  }
+
+  // (Re)create the GPU heightmap simulation at the current FBO resolution. The
+  // resolution tracks the viewport aspect (see resize) so simulation cells stay
+  // roughly square and drops render round instead of stretched.
+  private buildCompute(): void {
+    (this.gpuCompute as GPUComputationRenderer | undefined)?.dispose?.();
+    this.gpuCompute = new GPUComputationRenderer(this.fboW, this.fboH, this.renderer);
     if (!this.renderer.capabilities.isWebGL2) {
       this.gpuCompute.setDataType(THREE.HalfFloatType);
     }
@@ -164,10 +180,6 @@ export class FluidSimulation {
     const error = this.gpuCompute.init();
     if (error) throw new Error(error);
     this.smoothShader = this.gpuCompute.createShaderMaterial(SmoothFragment, { smoothTexture: { value: null } });
-
-    window.addEventListener("resize", () => this.resize());
-    this.resize();
-    this.drawReflectionTexture(0);
   }
 
   setConfig(config: Partial<FluidConfig>): void {
@@ -180,6 +192,10 @@ export class FluidSimulation {
     this.waveHeight = clamp(params.waveHeight ?? this.waveHeight, 0.1, 2.5);
   }
 
+  setOrientation(orientation: "landscape" | "portrait"): void {
+    this.orientation = orientation;
+  }
+
   smoothNow(): void {
     this.smoothWater(10);
   }
@@ -187,10 +203,14 @@ export class FluidSimulation {
   splat(input: FluidSplat): void {
     const side = input.color[1] > input.color[0] ? "buy" : input.color[0] > input.color[1] ? "sell" : "neutral";
     const minDim = Math.min(this.geomWidth, this.geomHeight);
-    const radius = clamp(input.radius <= 2 ? input.radius * minDim : input.radius, this.mouseSize, 240);
+    const baseRadius = input.radius <= 2 ? input.radius * minDim : input.radius;
+    const radius = clamp(baseRadius * this.sizeScale, 8, 240);
     const strength = clamp(input.force, this.waveHeight, 2.5);
     const visualWeight = clamp(Math.max((radius - this.mouseSize) / 150, (strength - this.waveHeight) / 1.1), 0, 1);
-    const positionedX = side === "neutral" ? input.x : this.positionXByDominance(input.x, side, strength);
+    const positionedX =
+      side === "neutral" || this.orientation === "portrait"
+        ? input.x
+        : this.positionXByDominance(input.x, side, strength);
     const x = clamp(positionedX, 0.035, 0.965);
     const y = clamp(input.y, 0.08, 0.92);
 
@@ -273,7 +293,9 @@ export class FluidSimulation {
       side,
       age: 0,
       life: THREE.MathUtils.lerp(2.8, 8.5, visualWeight),
-      radius: clamp(radius * 4.4, 120, 620),
+      // Extra sizeScale keeps the coloured glow proportional on small/portrait
+      // screens (no-op at sizeScale 1 on desktop).
+      radius: clamp(radius * 4.4 * this.sizeScale, 90 * this.sizeScale, 620),
       strength: clamp(strength * 0.55, 0.32, 1),
       seed: Math.random() * Math.PI * 2,
     });
@@ -301,23 +323,46 @@ export class FluidSimulation {
 
     const buyDominance = Math.max(0, this.sideDominance);
     const sellDominance = Math.max(0, -this.sideDominance);
-    if (buyDominance > 0.01) {
-      const edge = THREE.MathUtils.lerp(w * 0.98, w * 0.16, buyDominance);
-      const g = ctx.createLinearGradient(edge, 0, w, 0);
-      g.addColorStop(0, "rgba(38,255,148,0)");
-      g.addColorStop(0.48, `rgba(38,255,148,${0.12 + buyDominance * 0.16})`);
-      g.addColorStop(1, `rgba(38,255,148,${0.22 + buyDominance * 0.28})`);
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, w, h);
-    }
-    if (sellDominance > 0.01) {
-      const edge = THREE.MathUtils.lerp(w * 0.02, w * 0.84, sellDominance);
-      const g = ctx.createLinearGradient(0, 0, edge, 0);
-      g.addColorStop(0, `rgba(255,52,76,${0.22 + sellDominance * 0.28})`);
-      g.addColorStop(0.52, `rgba(255,52,76,${0.12 + sellDominance * 0.16})`);
-      g.addColorStop(1, "rgba(255,52,76,0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, w, h);
+    if (this.orientation === "portrait") {
+      // Portrait maps side to the vertical axis: buys glow up from the bottom,
+      // sells down from the top.
+      if (buyDominance > 0.01) {
+        const edge = THREE.MathUtils.lerp(h * 0.98, h * 0.16, buyDominance);
+        const g = ctx.createLinearGradient(0, edge, 0, h);
+        g.addColorStop(0, "rgba(38,255,148,0)");
+        g.addColorStop(0.48, `rgba(38,255,148,${0.12 + buyDominance * 0.16})`);
+        g.addColorStop(1, `rgba(38,255,148,${0.22 + buyDominance * 0.28})`);
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+      if (sellDominance > 0.01) {
+        const edge = THREE.MathUtils.lerp(h * 0.02, h * 0.84, sellDominance);
+        const g = ctx.createLinearGradient(0, 0, 0, edge);
+        g.addColorStop(0, `rgba(255,52,76,${0.22 + sellDominance * 0.28})`);
+        g.addColorStop(0.52, `rgba(255,52,76,${0.12 + sellDominance * 0.16})`);
+        g.addColorStop(1, "rgba(255,52,76,0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+    } else {
+      if (buyDominance > 0.01) {
+        const edge = THREE.MathUtils.lerp(w * 0.98, w * 0.16, buyDominance);
+        const g = ctx.createLinearGradient(edge, 0, w, 0);
+        g.addColorStop(0, "rgba(38,255,148,0)");
+        g.addColorStop(0.48, `rgba(38,255,148,${0.12 + buyDominance * 0.16})`);
+        g.addColorStop(1, `rgba(38,255,148,${0.22 + buyDominance * 0.28})`);
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+      if (sellDominance > 0.01) {
+        const edge = THREE.MathUtils.lerp(w * 0.02, w * 0.84, sellDominance);
+        const g = ctx.createLinearGradient(0, 0, edge, 0);
+        g.addColorStop(0, `rgba(255,52,76,${0.22 + sellDominance * 0.28})`);
+        g.addColorStop(0.52, `rgba(255,52,76,${0.12 + sellDominance * 0.16})`);
+        g.addColorStop(1, "rgba(255,52,76,0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
     }
 
     for (let i = 0; i < 7; i += 1) {
@@ -333,6 +378,11 @@ export class FluidSimulation {
       ctx.fillRect(0, 0, w, h);
     }
 
+    // The reflection canvas is a fixed landscape texture UV-mapped across the
+    // plane, so on a portrait viewport a circular blob would be squashed along
+    // the short axis. Stretch each blob horizontally by the aspect ratio so the
+    // coloured lights stay round on screen (≈1 on desktop, so it's a no-op there).
+    const blobScaleX = (w * this.geomHeight) / (h * this.geomWidth);
     ctx.globalCompositeOperation = "screen";
     for (const splat of this.dyeSplats) {
       splat.age += dt;
@@ -344,13 +394,17 @@ export class FluidSimulation {
       const rgb = splat.side === "buy" ? [38, 255, 148] : [255, 52, 76];
       const x = splat.u * w;
       const y = splat.v * h;
-      const g = ctx.createRadialGradient(x, y, radius * 0.04, x, y, radius);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(blobScaleX, 1);
+      const g = ctx.createRadialGradient(0, 0, radius * 0.04, 0, 0, radius);
       g.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`);
       g.addColorStop(0.38, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha * 0.42})`);
       g.addColorStop(0.76, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha * 0.14})`);
       g.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
       ctx.fillStyle = g;
-      ctx.fillRect(0, 0, w, h);
+      ctx.fillRect(-radius, -radius, radius * 2, radius * 2);
+      ctx.restore();
     }
     ctx.globalCompositeOperation = "source-over";
 
@@ -368,6 +422,26 @@ export class FluidSimulation {
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(width, height, false);
 
+    // Drop radii are authored against a desktop-sized field; scale them down on
+    // smaller / portrait screens so prints stay proportional instead of huge.
+    this.sizeScale = clamp(Math.min(width, height) / 760, 0.5, 1);
+
+    // Match the simulation grid aspect to the *actual* viewport width/height so
+    // cells stay roughly square on any device and drops render round instead of
+    // stretched. Long axis is fixed; the short axis tracks the aspect, snapped to
+    // a power of two (NPOT float targets produce vertical comb artifacts).
+    const snapPow2 = (value: number) => 2 ** Math.round(Math.log2(clamp(value, 128, FBO_WIDTH)));
+    const aspect = width / height;
+    const desiredW = aspect >= 1 ? FBO_WIDTH : snapPow2(FBO_WIDTH * aspect);
+    const desiredH = aspect >= 1 ? snapPow2(FBO_WIDTH / aspect) : FBO_WIDTH;
+    if (desiredW !== this.fboW || desiredH !== this.fboH) {
+      this.fboW = desiredW;
+      this.fboH = desiredH;
+      this.buildCompute();
+      this.waterMesh.material.defines.FBO_WIDTH = this.fboW.toFixed(1);
+      this.waterMesh.material.defines.FBO_HEIGHT = this.fboH.toFixed(1);
+    }
+
     this.camera.left = width / -2;
     this.camera.right = width / 2;
     this.camera.top = height / 2;
@@ -377,7 +451,7 @@ export class FluidSimulation {
     this.geomWidth = width;
     this.geomHeight = height;
     this.waterMesh.geometry.dispose();
-    this.waterMesh.geometry = new THREE.PlaneGeometry(this.geomWidth, this.geomHeight, FBO_WIDTH, FBO_HEIGHT);
+    this.waterMesh.geometry = new THREE.PlaneGeometry(this.geomWidth, this.geomHeight, this.fboW, this.fboH);
     this.waterMesh.updateMatrix();
 
     this.heightmapVariable.material.defines.GEOM_WIDTH = this.geomWidth.toFixed(1);

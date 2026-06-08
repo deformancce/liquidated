@@ -28,6 +28,7 @@ export class LiquidRenderer {
   private priceLo: number | null = null;
   private priceHi: number | null = null;
   private market: ScannerSettings["market"] | null = null;
+  private orientation: "landscape" | "portrait" = "landscape";
   private liquidParams: LiquidVisualParams = {
     mouseSize: DEFAULT_MOUSE_SIZE,
     viscosity: 0.985,
@@ -51,16 +52,30 @@ export class LiquidRenderer {
     const sideSign = trade.side === "buy" ? 1 : -1;
     this.pressureBias = clamp(this.pressureBias * 0.86 + sideSign * intensity * 0.075, -1, 1);
 
-    const x = clamp(0.5 + sideSign * lerp(0.42, 0.08, visualWeight), 0.04, 0.96);
-    const y = this.priceToY(trade.price);
+    const sideOffset = lerp(0.42, 0.08, visualWeight);
+    const priceAxis = this.priceToY(trade.price);
+    const flow = sideSign * (0.5 + shaped.visual.spread * 0.08);
+    const jitter = (Math.random() - 0.5) * 0.22;
     const radius = lerp(this.liquidParams.mouseSize, MAX_MOUSE_SIZE, visualWeight);
     const force = lerp(this.liquidParams.waveHeight, MAX_WAVE_HEIGHT, visualWeight) * clamp(0.9 + shaped.mag * 0.45, 0.9, 1.35);
 
+    // Portrait (mobile) rotates the field 90°: side runs vertically with buys
+    // sinking toward the bottom and sells rising toward the top, price runs
+    // left→right. The vertical spread is pulled inward so prints stay clear of
+    // the top bar and the bottom metrics sheet, and scattered across the width
+    // so the coloured lights fill the field instead of stacking in one column.
+    const portrait = this.orientation === "portrait";
     this.fluid.splat({
-      x,
-      y,
-      dx: sideSign * (0.5 + shaped.visual.spread * 0.08),
-      dy: (Math.random() - 0.5) * 0.22,
+      // Centre the horizontal (price) axis on the screen's middle axis with a
+      // mild price drift + scatter, so the field stays symmetric across devices.
+      x: portrait
+        ? clamp(0.5 + (priceAxis - 0.5) * 0.34 + (Math.random() - 0.5) * 0.5, 0.08, 0.92)
+        : clamp(0.5 + sideSign * sideOffset, 0.04, 0.96),
+      y: portrait
+        ? clamp(0.5 + sideSign * lerp(0.3, 0.08, visualWeight), 0.18, 0.82)
+        : priceAxis,
+      dx: portrait ? jitter : flow,
+      dy: portrait ? flow : jitter,
       color: COLORS[trade.side],
       radius,
       force,
@@ -71,18 +86,25 @@ export class LiquidRenderer {
     if (signal.side === "neutral") return;
     const visualWeight = this.visualWeight(signal.size);
     const sideSign = signal.side === "buy" ? 1 : -1;
-    const x = clamp(0.5 + sideSign * 0.16 + this.pressureBias * 0.08, 0.08, 0.92);
-    const y = clamp(this.sizeToY(signal.size, settings), 0.08, 0.92);
+    const sideAxis = clamp(0.5 + sideSign * 0.16 + this.pressureBias * 0.08, 0.08, 0.92);
+    const sizeAxis = clamp(this.sizeToY(signal.size, settings), 0.08, 0.92);
+    const flow = sideSign * (0.6 + signal.intensity * 0.4);
+    const portrait = this.orientation === "portrait";
 
     this.fluid.splat({
-      x,
-      y,
-      dx: sideSign * (0.6 + signal.intensity * 0.4),
-      dy: 0,
+      x: portrait ? clamp(0.5 + (sizeAxis - 0.5) * 0.4, 0.1, 0.9) : sideAxis,
+      y: portrait ? clamp(0.5 + sideSign * 0.16, 0.18, 0.82) : sideAxis,
+      dx: portrait ? 0 : flow,
+      dy: portrait ? flow : 0,
       color: COLORS[signal.side],
       radius: lerp(this.liquidParams.mouseSize * 0.9, MAX_MOUSE_SIZE * 0.8, visualWeight),
       force: lerp(this.liquidParams.waveHeight * 0.8, MAX_WAVE_HEIGHT, visualWeight) * clamp(signal.intensity, 0.8, 1.8),
     });
+  }
+
+  setOrientation(orientation: "landscape" | "portrait"): void {
+    this.orientation = orientation;
+    this.fluid.setOrientation(orientation);
   }
 
   setLiquidParams(params: Partial<LiquidVisualParams>): void {
