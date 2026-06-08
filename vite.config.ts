@@ -76,9 +76,14 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           main: resolve(__dirname, "index.html"),
+          resonator: resolve(__dirname, "resonator.html"),
+          resonatorLive: resolve(__dirname, "resonator-live.html"),
           visuals: resolve(__dirname, "visuals.html"),
           synth: resolve(__dirname, "synth.html"),
           tape: resolve(__dirname, "tape.html"),
+          water: resolve(__dirname, "water.html"),
+          waterReflect: resolve(__dirname, "water-reflect.html"),
+          waterLive: resolve(__dirname, "water-live.html"),
         },
       },
     },

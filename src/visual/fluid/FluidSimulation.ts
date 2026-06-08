@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import { GPUComputationRenderer, type Variable } from "three/examples/jsm/misc/GPUComputationRenderer.js";
 import { clamp } from "../../utils/format";
+import SmoothFragment from "../../water/shaders/smoothFragment.glsl?raw";
+import WaterFragment from "../../water-reflect/shaders/waterFragment.glsl?raw";
+import WaterVertex from "../../water/shaders/waterVertex.glsl?raw";
 
 export interface FluidConfig {
   densityDissipation: number;
@@ -28,20 +31,33 @@ interface PendingDrop {
   y: number;
   radius: number;
   strength: number;
+  side: "buy" | "sell" | "neutral";
+  visualWeight: number;
 }
 
-interface ActiveTint {
-  position: THREE.Vector2;
-  color: THREE.Vector3;
+interface DyeSplat {
+  u: number;
+  v: number;
+  side: "buy" | "sell";
+  age: number;
+  life: number;
   radius: number;
   strength: number;
+  seed: number;
 }
 
-const FBO_WIDTH = 640;
-const FBO_HEIGHT = 320;
-const MAX_LOCAL_TINTS = 16;
-const MAX_PENDING_DROPS = 24;
-const DROPS_PER_FRAME = 3;
+const FBO_WIDTH = 512;
+const FBO_HEIGHT = 256;
+const MAX_PENDING_DROPS = 48;
+const DROPS_PER_FRAME = 10;
+const DEFAULT_MOUSE_SIZE = 63;
+const DEFAULT_WAVE_HEIGHT = 1.1;
+
+export interface LiquidVisualParams {
+  mouseSize: number;
+  viscosity: number;
+  waveHeight: number;
+}
 
 const HEIGHTMAP_FRAGMENT = `
   #define PI 3.1415926538
@@ -62,78 +78,12 @@ const HEIGHTMAP_FRAGMENT = `
     vec4 west = texture2D(heightmap, uv + vec2(-cellSize.x, 0.0));
 
     float newHeight = ((north.x + south.x + east.x + west.x) * 0.5 - heightmapValue.y) * viscosityConstant;
-    float dist = length((uv - vec2(0.5)) * vec2(GEOM_WIDTH, GEOM_HEIGHT) - vec2(mousePos.x, -mousePos.y));
-    float norm = dist / max(mouseSize, 1.0);
-    float envelope = smoothstep(1.0, 0.0, norm);
-    float core = exp(-norm * norm * 7.5);
-    float ring = sin((1.0 - norm) * PI) * envelope;
-    float trough = -0.28 * smoothstep(0.34, 0.74, norm) * smoothstep(1.0, 0.72, norm);
-    newHeight += (core * 0.78 + ring * 0.42 + trough) * waveheightMultiplier;
+    float mousePhase = clamp(length((uv - vec2(0.5)) * vec2(GEOM_WIDTH, GEOM_HEIGHT) - vec2(mousePos.x, -mousePos.y)) * PI / max(mouseSize, 1.0), 0.0, PI);
+    newHeight += (cos(mousePhase) + 1.0) * waveheightMultiplier;
 
     heightmapValue.y = heightmapValue.x;
     heightmapValue.x = newHeight;
     gl_FragColor = heightmapValue;
-  }
-`;
-
-const WATER_VERTEX = `
-  varying vec2 vUv;
-
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-const WATER_FRAGMENT = `
-  #define MAX_LOCAL_TINTS 16
-  precision highp float;
-  uniform sampler2D heightmap;
-  uniform sampler2D map;
-  uniform vec2 texelSize;
-  uniform int localTintCount;
-  uniform vec2 localTintPositions[MAX_LOCAL_TINTS];
-  uniform vec3 localTintColors[MAX_LOCAL_TINTS];
-  uniform float localTintRadii[MAX_LOCAL_TINTS];
-  uniform float localTintStrengths[MAX_LOCAL_TINTS];
-  varying vec2 vUv;
-
-  void main() {
-    float h = texture2D(heightmap, vUv).x;
-    float left = texture2D(heightmap, vUv - vec2(texelSize.x, 0.0)).x;
-    float right = texture2D(heightmap, vUv + vec2(texelSize.x, 0.0)).x;
-    float top = texture2D(heightmap, vUv + vec2(0.0, texelSize.y)).x;
-    float bottom = texture2D(heightmap, vUv - vec2(0.0, texelSize.y)).x;
-    vec3 normal = normalize(vec3((left - right) * 8.5, (bottom - top) * 8.5, 1.0));
-    vec2 refractedUv = clamp(vUv + normal.xy * 0.052 + vec2(h * 0.014, -h * 0.012), 0.0, 1.0);
-    vec3 base = texture2D(map, refractedUv).rgb;
-    base = pow(base, vec3(0.88)) * 1.08;
-    vec3 localTint = vec3(0.0);
-    float localMask = 0.0;
-    for (int i = 0; i < MAX_LOCAL_TINTS; i += 1) {
-      if (i >= localTintCount) break;
-      vec2 delta = (vUv - localTintPositions[i]) * vec2(GEOM_WIDTH, GEOM_HEIGHT);
-      float falloff = smoothstep(localTintRadii[i], 0.0, length(delta));
-      float waveFocus = 0.48 + clamp(abs(h) * 4.8, 0.0, 0.52);
-      float tintAmount = falloff * localTintStrengths[i] * waveFocus;
-      localTint += localTintColors[i] * tintAmount;
-      localMask += tintAmount;
-    }
-    if (localMask > 0.001) {
-      vec3 tintColor = localTint / localMask;
-      vec3 tintWash = mix(base * 0.42, tintColor, 0.72) + tintColor * 0.22;
-      base = mix(base, tintWash, clamp(localMask * 1.18, 0.0, 0.96));
-    }
-    vec3 lightDir = normalize(vec3(-0.28, 0.38, 0.9));
-    vec3 viewDir = vec3(0.0, 0.0, 1.0);
-    float diffuse = max(dot(normal, lightDir), 0.0);
-    float specular = pow(max(dot(reflect(-lightDir, normal), viewDir), 0.0), 64.0);
-    float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 2.0);
-    vec3 color = base * (1.02 + diffuse * 0.2);
-    color += specular * vec3(1.0, 0.94, 0.92) * 0.58;
-    color += fresnel * vec3(0.4, 0.72, 0.76) * 0.22;
-    color = min(color + vec3(0.018, 0.016, 0.02), vec3(1.0));
-    gl_FragColor = vec4(color, 1.0);
   }
 `;
 
@@ -146,32 +96,53 @@ export class FluidSimulation {
   private waterUniforms: THREE.ShaderMaterial["uniforms"];
   private gpuCompute: GPUComputationRenderer;
   private heightmapVariable: Variable;
+  private smoothShader: THREE.ShaderMaterial;
   private pendingDrops: PendingDrop[] = [];
-  private activeTints: ActiveTint[] = [];
+  private dyeSplats: DyeSplat[] = [];
+  private reflectionCanvas = document.createElement("canvas");
+  private reflectionCtx: CanvasRenderingContext2D;
+  private reflectionTexture: THREE.CanvasTexture;
   private geomWidth = 1;
   private geomHeight = 1;
-  private config: FluidConfig = {
-    densityDissipation: 0.99,
-    velocityDissipation: 0.98,
-    pressure: 0.62,
-    curl: 0,
-    splatRadius: 0.01,
-    bloomIntensity: 0.8,
-    bloomThreshold: 0.6,
-    sunraysWeight: 1,
-  };
+  private sideDominance = 0;
+  private lastRender = performance.now();
+  private elapsed = 0;
+  private viscosity = 0.985;
+  private mouseSize = DEFAULT_MOUSE_SIZE;
+  private waveHeight = DEFAULT_WAVE_HEIGHT;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, powerPreference: "high-performance" });
+    this.reflectionCanvas.width = 2048;
+    this.reflectionCanvas.height = 1024;
+    const ctx = this.reflectionCanvas.getContext("2d");
+    if (!ctx) throw new Error("Unable to create reflection texture");
+    this.reflectionCtx = ctx;
+    this.reflectionCtx.imageSmoothingEnabled = true;
+    this.reflectionCtx.imageSmoothingQuality = "high";
+    this.reflectionTexture = new THREE.CanvasTexture(this.reflectionCanvas);
+    this.reflectionTexture.colorSpace = THREE.SRGBColorSpace;
+    this.reflectionTexture.wrapS = THREE.ClampToEdgeWrapping;
+    this.reflectionTexture.wrapT = THREE.ClampToEdgeWrapping;
+    this.reflectionTexture.minFilter = THREE.LinearFilter;
+    this.reflectionTexture.magFilter = THREE.LinearFilter;
+
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -1000, 1000);
     this.camera.position.z = 100;
     this.camera.lookAt(0, 0, 0);
 
+    const sun = new THREE.DirectionalLight(0xffffff, 5);
+    sun.position.set(300, 400, 175);
+    this.scene.add(sun);
+
+    const sun2 = new THREE.DirectionalLight(0xffffff, 0.6);
+    sun2.position.set(-100, 350, -200);
+    this.scene.add(sun2);
+
     const material = this.createWaterMaterial();
-    const geometry = new THREE.PlaneGeometry(1, 1, 1, 1);
-    this.waterMesh = new THREE.Mesh(geometry, material);
+    this.waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, FBO_WIDTH, FBO_HEIGHT), material);
     this.waterMesh.matrixAutoUpdate = false;
     this.scene.add(this.waterMesh);
     this.waterUniforms = material.uniforms;
@@ -186,47 +157,75 @@ export class FluidSimulation {
     this.heightmapVariable = this.gpuCompute.addVariable("heightmap", HEIGHTMAP_FRAGMENT, heightmap0);
     this.gpuCompute.setVariableDependencies(this.heightmapVariable, [this.heightmapVariable]);
     this.heightmapVariable.material.uniforms.mousePos = { value: new THREE.Vector2(10000, 10000) };
-    this.heightmapVariable.material.uniforms.mouseSize = { value: 63 };
-    this.heightmapVariable.material.uniforms.viscosityConstant = { value: 0.98 };
-    this.heightmapVariable.material.uniforms.waveheightMultiplier = { value: 0.3 };
+    this.heightmapVariable.material.uniforms.mouseSize = { value: this.mouseSize };
+    this.heightmapVariable.material.uniforms.viscosityConstant = { value: this.viscosity };
+    this.heightmapVariable.material.uniforms.waveheightMultiplier = { value: this.waveHeight };
 
     const error = this.gpuCompute.init();
     if (error) throw new Error(error);
+    this.smoothShader = this.gpuCompute.createShaderMaterial(SmoothFragment, { smoothTexture: { value: null } });
 
-    this.attachPointerDrops();
     window.addEventListener("resize", () => this.resize());
     this.resize();
+    this.drawReflectionTexture(0);
   }
 
   setConfig(config: Partial<FluidConfig>): void {
-    this.config = { ...this.config, ...config };
-    this.heightmapVariable.material.uniforms.viscosityConstant.value = clamp(this.config.velocityDissipation, 0.9, 0.999);
+    this.viscosity = clamp(config.velocityDissipation ?? this.viscosity, 0.9, 0.999);
+  }
+
+  setLiquidParams(params: Partial<LiquidVisualParams>): void {
+    this.mouseSize = clamp(params.mouseSize ?? this.mouseSize, 1, 240);
+    this.viscosity = clamp(params.viscosity ?? this.viscosity, 0.9, 0.999);
+    this.waveHeight = clamp(params.waveHeight ?? this.waveHeight, 0.1, 2.5);
+  }
+
+  smoothNow(): void {
+    this.smoothWater(10);
   }
 
   splat(input: FluidSplat): void {
-    const x = clamp(input.x, 0, 1);
-    const y = clamp(input.y, 0, 1);
-    const radius = clamp(input.radius * Math.min(this.geomWidth, this.geomHeight), 18, 300);
-    const motion = clamp(Math.hypot(input.dx, input.dy) * 0.044, 0, 0.42);
-    const strength = clamp(input.force * 0.088 + motion, 0.1, 1.35);
+    const side = input.color[1] > input.color[0] ? "buy" : input.color[0] > input.color[1] ? "sell" : "neutral";
+    const minDim = Math.min(this.geomWidth, this.geomHeight);
+    const radius = clamp(input.radius <= 2 ? input.radius * minDim : input.radius, this.mouseSize, 240);
+    const strength = clamp(input.force, this.waveHeight, 2.5);
+    const visualWeight = clamp(Math.max((radius - this.mouseSize) / 150, (strength - this.waveHeight) / 1.1), 0, 1);
+    const positionedX = side === "neutral" ? input.x : this.positionXByDominance(input.x, side, strength);
+    const x = clamp(positionedX, 0.035, 0.965);
+    const y = clamp(input.y, 0.08, 0.92);
+
     this.pendingDrops.push({
       x: (x - 0.5) * this.geomWidth,
       y: (0.5 - y) * this.geomHeight,
       radius,
       strength,
+      side,
+      visualWeight,
     });
     if (this.pendingDrops.length > MAX_PENDING_DROPS) {
       this.pendingDrops.splice(0, this.pendingDrops.length - MAX_PENDING_DROPS);
     }
-    this.pushTint(x, y, input.color, radius, clamp(strength * 1.9 + input.force * 0.16, 0.2, 1.65));
+
+    if (side !== "neutral") {
+      this.pushDyeSplat(x, y, side, radius, strength, visualWeight);
+    }
   }
 
   render(): void {
+    const now = performance.now();
+    const dt = Math.min((now - this.lastRender) / 1000, 0.08);
+    this.lastRender = now;
+    this.elapsed += dt;
+    this.sideDominance *= Math.exp(-dt / 3.8);
+
     const hmUniforms = this.heightmapVariable.material.uniforms;
+    hmUniforms.viscosityConstant.value = this.viscosity;
     const drops = this.pendingDrops.splice(0, DROPS_PER_FRAME);
 
     if (drops.length === 0) {
       hmUniforms.mousePos.value.set(10000, 10000);
+      hmUniforms.mouseSize.value = this.mouseSize;
+      hmUniforms.waveheightMultiplier.value = this.waveHeight;
       this.gpuCompute.compute();
     } else {
       for (const drop of drops) {
@@ -234,15 +233,131 @@ export class FluidSimulation {
         hmUniforms.mouseSize.value = drop.radius;
         hmUniforms.waveheightMultiplier.value = drop.strength;
         this.gpuCompute.compute();
+        this.smoothWater(4);
       }
-      hmUniforms.mousePos.value.set(10000, 10000);
-      hmUniforms.mouseSize.value = 63;
-      hmUniforms.waveheightMultiplier.value = 0.3;
     }
 
     this.waterUniforms.heightmap.value = this.gpuCompute.getCurrentRenderTarget(this.heightmapVariable).texture;
-    this.updateTintUniforms();
+    this.drawReflectionTexture(dt);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  private smoothWater(iterations: number): void {
+    const currentRenderTarget = this.gpuCompute.getCurrentRenderTarget(this.heightmapVariable);
+    const alternateRenderTarget = this.gpuCompute.getAlternateRenderTarget(this.heightmapVariable);
+
+    for (let i = 0; i < iterations; i += 1) {
+      this.smoothShader.uniforms.smoothTexture.value = currentRenderTarget.texture;
+      this.gpuCompute.doRenderTarget(this.smoothShader, alternateRenderTarget);
+
+      this.smoothShader.uniforms.smoothTexture.value = alternateRenderTarget.texture;
+      this.gpuCompute.doRenderTarget(this.smoothShader, currentRenderTarget);
+    }
+  }
+
+  private positionXByDominance(x: number, side: "buy" | "sell", strength: number): number {
+    const direction = side === "buy" ? 1 : -1;
+    const incomingWeight = clamp(strength * 0.08, 0.035, 0.16);
+    const predictedDominance = clamp(this.sideDominance + direction * incomingWeight, -1, 1);
+    const buyShift = Math.max(0, predictedDominance);
+    const sellShift = Math.max(0, -predictedDominance);
+    return side === "buy" ? x - buyShift * 0.34 : x + sellShift * 0.34;
+  }
+
+  private pushDyeSplat(x: number, y: number, side: "buy" | "sell", radius: number, strength: number, visualWeight: number): void {
+    const direction = side === "buy" ? 1 : -1;
+    this.sideDominance = clamp(this.sideDominance + direction * clamp(strength * 0.1, 0.045, 0.18), -1, 1);
+    this.dyeSplats.push({
+      u: x,
+      v: y,
+      side,
+      age: 0,
+      life: THREE.MathUtils.lerp(2.8, 8.5, visualWeight),
+      radius: clamp(radius * 4.4, 120, 620),
+      strength: clamp(strength * 0.55, 0.32, 1),
+      seed: Math.random() * Math.PI * 2,
+    });
+  }
+
+  private drawReflectionTexture(dt: number): void {
+    const ctx = this.reflectionCtx;
+    const w = this.reflectionCanvas.width;
+    const h = this.reflectionCanvas.height;
+
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "#020303";
+    ctx.fillRect(0, 0, w, h);
+
+    const base = ctx.createLinearGradient(0, 0, w, h);
+    base.addColorStop(0.0, "#050606");
+    base.addColorStop(0.28, "#313638");
+    base.addColorStop(0.48, "#080909");
+    base.addColorStop(0.72, "#6e7678");
+    base.addColorStop(1.0, "#030404");
+    ctx.globalAlpha = 0.82;
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = 1;
+
+    const buyDominance = Math.max(0, this.sideDominance);
+    const sellDominance = Math.max(0, -this.sideDominance);
+    if (buyDominance > 0.01) {
+      const edge = THREE.MathUtils.lerp(w * 0.98, w * 0.16, buyDominance);
+      const g = ctx.createLinearGradient(edge, 0, w, 0);
+      g.addColorStop(0, "rgba(38,255,148,0)");
+      g.addColorStop(0.48, `rgba(38,255,148,${0.12 + buyDominance * 0.16})`);
+      g.addColorStop(1, `rgba(38,255,148,${0.22 + buyDominance * 0.28})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+    }
+    if (sellDominance > 0.01) {
+      const edge = THREE.MathUtils.lerp(w * 0.02, w * 0.84, sellDominance);
+      const g = ctx.createLinearGradient(0, 0, edge, 0);
+      g.addColorStop(0, `rgba(255,52,76,${0.22 + sellDominance * 0.28})`);
+      g.addColorStop(0.52, `rgba(255,52,76,${0.12 + sellDominance * 0.16})`);
+      g.addColorStop(1, "rgba(255,52,76,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    for (let i = 0; i < 7; i += 1) {
+      const a = this.elapsed * (0.18 + i * 0.015) + i * 1.73;
+      const cx = (0.5 + Math.sin(a) * 0.42) * w;
+      const cy = (0.5 + Math.cos(a * 1.27) * 0.36) * h;
+      const r = (0.22 + (i % 3) * 0.09) * w;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, "rgba(235,245,248,0.22)");
+      g.addColorStop(0.42, "rgba(105,116,118,0.08)");
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    ctx.globalCompositeOperation = "screen";
+    for (const splat of this.dyeSplats) {
+      splat.age += dt;
+      const t = Math.min(1, splat.age / splat.life);
+      const fade = (1 - t) * (1 - t);
+      const radius = splat.radius * (0.7 + t * 1.45);
+      const pulse = 0.92 + Math.sin(this.elapsed * 3.2 + splat.seed) * 0.08;
+      const alpha = Math.min(0.92, splat.strength * fade) * pulse;
+      const rgb = splat.side === "buy" ? [38, 255, 148] : [255, 52, 76];
+      const x = splat.u * w;
+      const y = splat.v * h;
+      const g = ctx.createRadialGradient(x, y, radius * 0.04, x, y, radius);
+      g.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`);
+      g.addColorStop(0.38, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha * 0.42})`);
+      g.addColorStop(0.76, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha * 0.14})`);
+      g.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+    }
+    ctx.globalCompositeOperation = "source-over";
+
+    for (let i = this.dyeSplats.length - 1; i >= 0; i -= 1) {
+      if (this.dyeSplats[i].age >= this.dyeSplats[i].life) this.dyeSplats.splice(i, 1);
+    }
+    this.reflectionTexture.needsUpdate = true;
   }
 
   private resize(): void {
@@ -262,7 +377,7 @@ export class FluidSimulation {
     this.geomWidth = width;
     this.geomHeight = height;
     this.waterMesh.geometry.dispose();
-    this.waterMesh.geometry = new THREE.PlaneGeometry(this.geomWidth, this.geomHeight, 1, 1);
+    this.waterMesh.geometry = new THREE.PlaneGeometry(this.geomWidth, this.geomHeight, FBO_WIDTH, FBO_HEIGHT);
     this.waterMesh.updateMatrix();
 
     this.heightmapVariable.material.defines.GEOM_WIDTH = this.geomWidth.toFixed(1);
@@ -273,58 +388,42 @@ export class FluidSimulation {
   }
 
   private createWaterMaterial(): THREE.ShaderMaterial {
-    const map = this.createGradientTexture();
     const material = new THREE.ShaderMaterial({
-      uniforms: {
-        heightmap: { value: null },
-        map: { value: map },
-        texelSize: { value: new THREE.Vector2(1 / FBO_WIDTH, 1 / FBO_HEIGHT) },
-        localTintCount: { value: 0 },
-        localTintPositions: { value: Array.from({ length: MAX_LOCAL_TINTS }, () => new THREE.Vector2(10000, 10000)) },
-        localTintColors: { value: Array.from({ length: MAX_LOCAL_TINTS }, () => new THREE.Vector3()) },
-        localTintRadii: { value: Array.from({ length: MAX_LOCAL_TINTS }, () => 0) },
-        localTintStrengths: { value: Array.from({ length: MAX_LOCAL_TINTS }, () => 0) },
-      },
-      vertexShader: WATER_VERTEX,
-      fragmentShader: WATER_FRAGMENT,
+      uniforms: THREE.UniformsUtils.merge([
+        THREE.ShaderLib.phong.uniforms,
+        {
+          heightmap: { value: null },
+        },
+      ]),
+      vertexShader: WaterVertex,
+      fragmentShader: WaterFragment,
     });
+    material.lights = true;
+
+    const materialWithMap = material as THREE.ShaderMaterial & {
+      color: THREE.Color;
+      specular: THREE.Color;
+      shininess: number;
+      map: THREE.Texture;
+      opacity: number;
+    };
+    materialWithMap.color = new THREE.Color(0xffffff);
+    materialWithMap.specular = new THREE.Color(0x111111);
+    materialWithMap.shininess = 50;
+    materialWithMap.map = this.reflectionTexture;
+
+    material.uniforms.diffuse.value = materialWithMap.color;
+    material.uniforms.specular.value = materialWithMap.specular;
+    material.uniforms.shininess.value = Math.max(materialWithMap.shininess, 1e-4);
+    material.uniforms.opacity.value = materialWithMap.opacity;
+    material.uniforms.map.value = this.reflectionTexture;
+
+    material.defines.FBO_WIDTH = FBO_WIDTH.toFixed(1);
+    material.defines.FBO_HEIGHT = FBO_HEIGHT.toFixed(1);
+    material.defines.GEOM_WIDTH = this.geomWidth.toFixed(1);
+    material.defines.GEOM_HEIGHT = this.geomHeight.toFixed(1);
+
     return material;
-  }
-
-  private createGradientTexture(): THREE.CanvasTexture {
-    const textureCanvas = document.createElement("canvas");
-    textureCanvas.width = 2048;
-    textureCanvas.height = 1072;
-    const ctx = textureCanvas.getContext("2d");
-    if (!ctx) throw new Error("Unable to create gradient texture");
-
-    const base = ctx.createLinearGradient(0, 0, textureCanvas.width, textureCanvas.height);
-    base.addColorStop(0, "#f786ba");
-    base.addColorStop(0.33, "#763e57");
-    base.addColorStop(0.62, "#35112f");
-    base.addColorStop(1, "#fb86b9");
-    ctx.fillStyle = base;
-    ctx.fillRect(0, 0, textureCanvas.width, textureCanvas.height);
-
-    const teal = ctx.createRadialGradient(0, textureCanvas.height * 0.78, 0, 0, textureCanvas.height * 0.78, textureCanvas.width * 0.55);
-    teal.addColorStop(0, "rgba(9, 94, 83, 0.92)");
-    teal.addColorStop(1, "rgba(3, 67, 59, 0)");
-    ctx.fillStyle = teal;
-    ctx.fillRect(0, 0, textureCanvas.width, textureCanvas.height);
-
-    const dark = ctx.createRadialGradient(textureCanvas.width * 0.5, textureCanvas.height * 0.62, 0, textureCanvas.width * 0.5, textureCanvas.height * 0.62, textureCanvas.width * 0.7);
-    dark.addColorStop(0, "rgba(40, 16, 45, 0.6)");
-    dark.addColorStop(1, "rgba(32, 12, 35, 0)");
-    ctx.fillStyle = dark;
-    ctx.fillRect(0, 0, textureCanvas.width, textureCanvas.height);
-
-    const texture = new THREE.CanvasTexture(textureCanvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.wrapS = THREE.ClampToEdgeWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    return texture;
   }
 
   private fillTexture(texture: THREE.DataTexture): void {
@@ -335,67 +434,5 @@ export class FluidSimulation {
       pixels[index + 2] = 0;
       pixels[index + 3] = 1;
     }
-  }
-
-  private pushTint(x: number, y: number, color: [number, number, number], radius: number, amount: number): void {
-    const reusable = this.activeTints.find(
-      (tint) => tint.color.x === color[0] / 255 && tint.color.y === color[1] / 255 && tint.color.z === color[2] / 255,
-    );
-    if (reusable) {
-      reusable.position.set(x, y);
-      reusable.radius = clamp(Math.max(reusable.radius, radius * 2.2), 62, 260);
-      reusable.strength = clamp(reusable.strength + amount * 0.34, 0.14, 1);
-      return;
-    }
-
-    const next: ActiveTint = {
-      position: new THREE.Vector2(x, y),
-      color: new THREE.Vector3(color[0] / 255, color[1] / 255, color[2] / 255),
-      radius: clamp(radius * 2.35, 62, 240),
-      strength: clamp(amount * 0.82, 0.12, 0.92),
-    };
-    this.activeTints.unshift(next);
-    if (this.activeTints.length > MAX_LOCAL_TINTS) {
-      this.activeTints.length = MAX_LOCAL_TINTS;
-    }
-  }
-
-  private updateTintUniforms(): void {
-    this.activeTints = this.activeTints
-      .map((tint) => ({ ...tint, strength: tint.strength * 0.952, radius: tint.radius * 1.006 }))
-      .filter((tint) => tint.strength > 0.025);
-
-    const count = Math.min(this.activeTints.length, MAX_LOCAL_TINTS);
-    this.waterUniforms.localTintCount.value = count;
-    for (let index = 0; index < MAX_LOCAL_TINTS; index += 1) {
-      const tint = this.activeTints[index];
-      const position = this.waterUniforms.localTintPositions.value[index] as THREE.Vector2;
-      const color = this.waterUniforms.localTintColors.value[index] as THREE.Vector3;
-      if (tint) {
-        position.copy(tint.position);
-        color.copy(tint.color);
-        this.waterUniforms.localTintRadii.value[index] = tint.radius;
-        this.waterUniforms.localTintStrengths.value[index] = tint.strength;
-      } else {
-        position.set(10000, 10000);
-        color.set(0, 0, 0);
-        this.waterUniforms.localTintRadii.value[index] = 0;
-        this.waterUniforms.localTintStrengths.value[index] = 0;
-      }
-    }
-  }
-
-  private attachPointerDrops(): void {
-    this.canvas.addEventListener("pointermove", (event) => {
-      if (!event.isPrimary) return;
-      if (this.pendingDrops.length > MAX_PENDING_DROPS * 0.75) return;
-      const rect = this.canvas.getBoundingClientRect();
-      this.pendingDrops.push({
-        x: event.clientX - rect.left - rect.width / 2,
-        y: event.clientY - rect.top - rect.height / 2,
-        radius: 63,
-        strength: 0.3,
-      });
-    });
   }
 }

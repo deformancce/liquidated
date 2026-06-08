@@ -1,0 +1,257 @@
+:root {
+  --bg: #080a0f;
+  --panel: #11151f;
+  --panel-2: #161b27;
+  --line: #232a3a;
+  --text: #e7ecf5;
+  --muted: #8893a7;
+  --accent: #4ee6c2;
+  --accent-2: #ff5d73;
+  --track: #2a3142;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: radial-gradient(circle at 50% -10%, #131a28, var(--bg) 60%);
+  color: var(--text);
+  font-family: "SF Mono", ui-monospace, "Roboto Mono", Menlo, monospace;
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+.resonator-lab {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 28px 24px 48px;
+}
+
+.lab-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.kicker {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.lab-head h1 {
+  margin: 4px 0 0;
+  font-size: 30px;
+  letter-spacing: 0.04em;
+}
+
+.back-link {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.transport-bar,
+.notes-panel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.play-btn {
+  min-width: 128px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: var(--panel-2);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.play-btn.on {
+  border-color: var(--accent-2);
+  background: rgba(255, 93, 115, 0.18);
+  color: var(--accent-2);
+}
+
+.select-field {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.select-field select {
+  min-width: 180px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.output-meter {
+  display: grid;
+  gap: 6px;
+  min-width: 110px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.output-meter + .output-meter {
+  margin-left: 0;
+}
+
+.output-meter span.hot {
+  color: var(--accent);
+}
+
+.output-meter i {
+  display: block;
+  width: 100%;
+  height: 8px;
+  transform-origin: left center;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+
+.lab-status {
+  min-height: 16px;
+  margin: 14px 2px 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.engine-status {
+  margin: 0 2px 18px;
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fader-board {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.fader-group {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 14px 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.fader-group legend {
+  padding: 0 6px;
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.fader-row {
+  display: flex;
+  gap: 18px;
+}
+
+.fader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 54px;
+}
+
+.fader-value {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 4px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 10px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fader-input {
+  width: 26px;
+  height: 156px;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.fader-label {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.notes-panel {
+  align-items: flex-start;
+  margin-top: 22px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.notes-panel strong {
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 10px;
+}
+
+.notes-panel span {
+  max-width: 860px;
+}
+
+@media (max-width: 760px) {
+  .resonator-lab {
+    padding: 18px 14px 36px;
+  }
+
+  .lab-head {
+    align-items: flex-start;
+    gap: 12px;
+    flex-direction: column;
+  }
+
+  .select-field,
+  .select-field select,
+  .output-meter {
+    width: 100%;
+  }
+}

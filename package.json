@@ -12,11 +12,13 @@
     "dev": "vite --host 0.0.0.0",
     "start": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
+    "build:rings-wasm": "bash scripts/build-rings-wasm.sh",
     "preview": "vite preview --host 0.0.0.0",
     "liqs:proto": "python3 -m grpc_tools.protoc -I indexer --python_out=indexer --grpc_python_out=indexer indexer/hyperliquid.proto",
     "liqs:indexer": "python3 indexer/server.py"
   },
   "dependencies": {
+    "dat.gui": "^0.7.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "three": "^0.184.0",

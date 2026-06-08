@@ -191,10 +191,7 @@ function TapeApp() {
   return (
     <main className="tape-shell aggr">
       <header className="tape-head">
-        <div>
-          <p>Hyperliquid public API · trades stream</p>
-          <h1>Liquidated Tape</h1>
-        </div>
+        <img className="brand-logo" src="/assets/liquidated_logo.svg" alt="Liquidated" />
         <a href="/synth.html">Synth →</a>
       </header>
 

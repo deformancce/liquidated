@@ -94,6 +94,7 @@ export interface ScannerSettings {
   market: Market;
   mode: "live" | "demo";
   minPrintSize: number;
+  maxPrintSize?: number;
   sensitivity: number;
   clusterWindowMs: number;
   volume: number;

@@ -12,64 +12,136 @@
       <canvas id="flowCanvas" aria-label="Liquidated flow visualizer"></canvas>
 
       <section class="feed-panel" aria-label="Market feed">
-        <span class="feed-label">Market Feed</span>
-        <label class="feed-control">
-          <span>Pair</span>
-          <select id="symbolSelect">
-            <option value="BTC" selected>BTC</option>
-            <option value="ETH">ETH</option>
-            <option value="SOL">SOL</option>
-            <option value="HYPE">HYPE</option>
-          </select>
-        </label>
+        <img class="brand-logo" src="/assets/liquidated_logo.svg" alt="Liquidated">
+        <details class="pair-menu">
+          <summary id="symbolSummary">BTC</summary>
+          <div class="pair-options" aria-label="Instrument">
+            <button type="button" data-market="BTC"><img src="/assets/hyperliquid-symbol.svg" alt="" aria-hidden="true">BTC</button>
+            <button type="button" data-market="ETH"><img src="/assets/hyperliquid-symbol.svg" alt="" aria-hidden="true">ETH</button>
+            <button type="button" data-market="SOL"><img src="/assets/hyperliquid-symbol.svg" alt="" aria-hidden="true">SOL</button>
+            <button type="button" data-market="HYPE"><img src="/assets/hyperliquid-symbol.svg" alt="" aria-hidden="true">HYPE</button>
+          </div>
+        </details>
         <div class="feed-toggle" aria-label="Shaping">
           <button id="rawButton" type="button">Raw</button>
           <button id="aggregatedButton" class="active" type="button">Aggregated</button>
         </div>
-        <label class="feed-control">
-          <span>Min</span>
-          <select id="minSize">
-            <option value="0" selected>0</option>
-            <option value="1000">$1k+</option>
-            <option value="10000">$10k+</option>
-            <option value="50000">$50k+</option>
-            <option value="100000">$100k+</option>
-          </select>
-        </label>
-        <label class="feed-control">
-          <span>Window</span>
-          <select id="windowMs">
-            <option value="250" selected>250ms</option>
-            <option value="500">500ms</option>
-            <option value="1000">1000ms</option>
-          </select>
-        </label>
-        <label class="feed-control">
-          <span>Bucket</span>
-          <select id="priceBucket">
-            <option value="0">Exact</option>
-            <option value="0.01">$0.01</option>
-            <option value="0.05">$0.05</option>
-            <option value="0.1">$0.10</option>
-            <option value="0.25">$0.25</option>
-            <option value="0.5">$0.50</option>
-            <option value="1" selected>$1</option>
-            <option value="2">$2</option>
-            <option value="5">$5</option>
-          </select>
-        </label>
-        <div class="segment" aria-label="Data mode">
-          <button id="offButton" type="button">Off</button>
-          <button id="liveButton" class="active" type="button">Live</button>
+        <div class="feed-control range-control">
+          <span>Range</span>
+          <div class="dual-range">
+            <input id="minSize" type="range" min="0" max="1000" step="1" value="0">
+            <input id="maxSize" type="range" min="0" max="1000" step="1" value="1000">
+            <b id="minSizeValue">$1k</b>
+            <b id="maxSizeValue">$5M</b>
+          </div>
         </div>
-        <button id="audioButton" class="audio-button" type="button" aria-pressed="false">
-          <span class="audio-dot" aria-hidden="true"></span>
-          Audio
-        </button>
+        <details class="group-menu">
+          <summary>
+            <span>Group</span>
+            <b id="aggregateSummary">250ms / $1</b>
+          </summary>
+          <div class="group-options" aria-label="Aggregation settings">
+            <div>
+              <span>ms</span>
+              <button type="button" data-aggregate-kind="window" data-aggregate-value="250">250</button>
+              <button type="button" data-aggregate-kind="window" data-aggregate-value="500">500</button>
+              <button type="button" data-aggregate-kind="window" data-aggregate-value="1000">1000</button>
+            </div>
+            <div>
+              <span>$</span>
+              <button type="button" data-aggregate-kind="bucket" data-aggregate-value="0">exact</button>
+              <button type="button" data-aggregate-kind="bucket" data-aggregate-value="0.01">0.01</button>
+              <button type="button" data-aggregate-kind="bucket" data-aggregate-value="0.1">0.10</button>
+              <button type="button" data-aggregate-kind="bucket" data-aggregate-value="0.5">0.50</button>
+              <button type="button" data-aggregate-kind="bucket" data-aggregate-value="1">1</button>
+              <button type="button" data-aggregate-kind="bucket" data-aggregate-value="5">5</button>
+            </div>
+          </div>
+        </details>
+        <div class="segment" aria-label="Data mode">
+          <button id="offButton" class="active" type="button">Off</button>
+          <button id="liveButton" type="button">Live</button>
+        </div>
+        <details class="resonator-menu">
+          <summary>Audio settings</summary>
+          <div class="resonator-controls">
+            <label>
+              <span>Max voices</span>
+              <input id="resMaxVoices" type="range" min="2" max="24" step="1" value="18">
+              <b id="resMaxVoicesValue">18</b>
+            </label>
+            <label>
+              <span>Frequency</span>
+              <input id="resFrequency" type="range" min="0" max="60" step="1" value="34">
+              <b id="resFrequencyValue">34 st</b>
+            </label>
+            <label>
+              <span>Structure</span>
+              <input id="resStructure" type="range" min="0" max="0.999" step="0.001" value="0.86">
+              <b id="resStructureValue">0.86</b>
+            </label>
+            <label>
+              <span>Base damping</span>
+              <input id="resBaseDamping" type="range" min="0" max="0.98" step="0.01" value="0.71">
+              <b id="resBaseDampingValue">0.71</b>
+            </label>
+            <label>
+              <span>Base position</span>
+              <input id="resBasePosition" type="range" min="0.02" max="0.98" step="0.01" value="0.63">
+              <b id="resBasePositionValue">0.63</b>
+            </label>
+            <label>
+              <span>Damping lift</span>
+              <input id="resDampingLift" type="range" min="0" max="0.35" step="0.01" value="0.14">
+              <b id="resDampingLiftValue">0.14</b>
+            </label>
+            <label>
+              <span>Position spread</span>
+              <input id="resPositionSpread" type="range" min="0.05" max="0.48" step="0.01" value="0.26">
+              <b id="resPositionSpreadValue">0.26</b>
+            </label>
+            <label>
+              <span>Brightness</span>
+              <input id="resBrightness" type="range" min="0.1" max="0.95" step="0.01" value="0.25">
+              <b id="resBrightnessValue">0.25</b>
+            </label>
+            <label>
+              <span>Release</span>
+              <input id="resRelease" type="range" min="0.1" max="4" step="0.05" value="2.30">
+              <b id="resReleaseValue">2.30s</b>
+            </label>
+            <button id="saveAudioSettings" class="save-audio-settings" type="button">Save</button>
+          </div>
+        </details>
+        <details class="liquid-menu">
+          <summary>Liquid settings</summary>
+          <div class="liquid-controls">
+            <label>
+              <span>mouseSize</span>
+              <input id="liqMouseSize" type="range" min="1" max="240" step="1" value="63">
+              <b id="liqMouseSizeValue">63</b>
+            </label>
+            <label>
+              <span>viscosity</span>
+              <input id="liqViscosity" type="range" min="0.9" max="0.999" step="0.001" value="0.985">
+              <b id="liqViscosityValue">0.985</b>
+            </label>
+            <label>
+              <span>waveHeight</span>
+              <input id="liqWaveHeight" type="range" min="0.1" max="2.5" step="0.05" value="1.1">
+              <b id="liqWaveHeightValue">1.10</b>
+            </label>
+            <button id="smoothWater" class="save-audio-settings" type="button">smoothWater</button>
+          </div>
+        </details>
         <div class="status-row">
           <span id="statusLight" class="status-light"></span>
           <span id="statusText">Connecting</span>
         </div>
+      </section>
+
+      <aside class="side-panel" aria-label="Flow tape">
+        <ol id="eventTape" class="event-tape" aria-label="Recent flow events"></ol>
         <div class="metric-grid">
           <div>
             <span>Buy Flow</span>
@@ -98,17 +170,6 @@
             <div id="pressureFill" class="meter-fill"></div>
           </div>
         </div>
-      </section>
-
-      <aside class="side-panel" aria-label="Flow tape">
-        <div class="event-tape-header" aria-hidden="true">
-          <span>Side</span>
-          <span>Price</span>
-          <span>Size</span>
-          <span>Fills</span>
-          <span>Age</span>
-        </div>
-        <ol id="eventTape" class="event-tape" aria-label="Recent flow events"></ol>
       </aside>
 
     </main>

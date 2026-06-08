@@ -1,50 +1,45 @@
 import { useEffect, useRef, useState } from "react";
-import * as Tone from "tone";
-import { Fader, type FaderGroup } from "./Fader";
-import {
-  BIGSKY_GROUPS,
-  DECO_GROUPS,
-  DROPLET_GROUPS,
-  ELCAP_GROUPS,
-  FLOW_GROUPS,
-  KLON_GROUPS,
-  MASTER_GROUPS,
-} from "./params";
-import { DropletTrack, TRACK_DEFAULTS, type TrackId, type TrackParams } from "./dropletTrack";
-import { DEFAULT_FLOW, FlowVoice, type FlowParams } from "./flowVoice";
-import { DEFAULT_MASTER, MasterBus, type MasterParams } from "./masterBus";
+import { Fader, type FaderSpec } from "./Fader";
 import { MarketDriver, type FeedMode, type FeedShaping } from "./marketDriver";
-import { DEFAULT_SHARED_FX, SharedFxRack, type SharedFxParams } from "./sharedFxRack";
-import { ORDER_SIZE_TIERS, shapeTrade, TUNE_REF } from "./tradeMapping";
-import { MARKET_CONFIG, MARKETS } from "../config/markets";
-import { clamp } from "../utils/format";
+import { AudioEngine, DEFAULT_RESONATOR_AUDIO, type ResonatorAudioParams } from "../audio/audioEngine";
+import { MARKETS } from "../config/markets";
 import { LiquidRenderer } from "../visual/liquidRenderer";
-import type { ConnectionStatus, FlowSignal, Market, Side, TradeEvent } from "../types";
+import type { ConnectionStatus, FlowSignal, Market, ScannerSettings, TradeEvent } from "../types";
 
-const TRACK_IDS: TrackId[] = ["main"];
+type ResonatorMode = ResonatorAudioParams["mode"];
+type OutputMode = ResonatorAudioParams["output"];
 
-const TRACK_META: Record<TrackId, { title: string; role: string }> = {
-  main: { title: "Droplets", role: "Buys high · Sells low" },
-};
-
-const SIGNAL_TRIGGER_GAP_MS = 260;
+const MAX_PRINT_SIZE = 5_000_000;
 const usd = (value: number) => `$${Math.round(value).toLocaleString("en-US")}`;
 
-// Feed-shaping options, mirrored from the Tape page so both pages drive the
+// Feed-shaping options, mirrored from the Tape page so every page drives the
 // same Hyperliquid stream the same way.
 const MIN_SIZE_OPTIONS = [0, 1_000, 10_000, 50_000, 100_000];
 const WINDOW_OPTIONS = [250, 500, 1_000];
 const PRICE_BUCKET_OPTIONS = [0, 1, 2, 5];
 
-const cloneTracks = (): Record<TrackId, TrackParams> => ({
-  main: structuredClone(TRACK_DEFAULTS.main),
-});
+// Resonator faders — these map straight onto the same AudioEngine the main
+// Liquidated visualizer uses, so the standalone synth sounds identical.
+const VOICE_FADERS: FaderSpec<keyof ResonatorAudioParams>[] = [
+  { key: "maxVoices", label: "Max voices", min: 2, max: 24, step: 1, format: (v) => `${Math.round(v)}` },
+  { key: "baseFrequency", label: "Frequency", min: 0, max: 60, step: 1, format: (v) => `${Math.round(v)} st` },
+  { key: "structure", label: "Structure", min: 0, max: 0.999, step: 0.001, format: (v) => v.toFixed(3) },
+  { key: "brightness", label: "Brightness", min: 0.1, max: 0.95, step: 0.01, format: (v) => v.toFixed(2) },
+];
 
-const isDataMode = (mode: FeedMode) => mode !== "off";
-const TRACK_DROPLET_GROUPS = DROPLET_GROUPS.map((group) => ({
-  ...group,
-  faders: group.faders.filter((spec) => spec.key !== "space" && spec.key !== "echo"),
-})).filter((group) => group.faders.length > 0);
+const RESONATOR_FADERS: FaderSpec<keyof ResonatorAudioParams>[] = [
+  { key: "baseDamping", label: "Damping", min: 0, max: 0.98, step: 0.01, format: (v) => v.toFixed(2) },
+  { key: "basePosition", label: "Position", min: 0.02, max: 0.98, step: 0.01, format: (v) => v.toFixed(2) },
+  { key: "dampingLift", label: "Damp lift", min: 0, max: 0.35, step: 0.01, format: (v) => v.toFixed(2) },
+  { key: "positionSpread", label: "Pos spread", min: 0.05, max: 0.48, step: 0.01, format: (v) => v.toFixed(2) },
+];
+
+const ENV_FADERS: FaderSpec<keyof ResonatorAudioParams>[] = [
+  { key: "attack", label: "Attack", min: 0.001, max: 0.5, step: 0.001, format: (v) => `${Math.round(v * 1000)}ms` },
+  { key: "decay", label: "Decay", min: 0.02, max: 2.4, step: 0.01, format: (v) => `${v.toFixed(2)}s` },
+  { key: "sustain", label: "Sustain", min: 0.01, max: 1, step: 0.01, format: (v) => v.toFixed(2) },
+  { key: "release", label: "Release", min: 0.1, max: 4, step: 0.05, format: (v) => `${v.toFixed(2)}s` },
+];
 
 interface FeedStats {
   raw: number;
@@ -53,15 +48,27 @@ interface FeedStats {
 }
 
 export function SynthApp() {
-  const masterRef = useRef<MasterBus | null>(null);
-  const tracksRef = useRef<Record<TrackId, DropletTrack> | null>(null);
-  const flowRef = useRef<FlowVoice | null>(null);
-  const sharedFxRef = useRef<SharedFxRack | null>(null);
+  const audioRef = useRef<AudioEngine | null>(null);
   const driverRef = useRef<MarketDriver | null>(null);
   const visualCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<LiquidRenderer | null>(null);
-  const lastSignalTriggerRef = useRef<Record<Side, number>>({ buy: 0, sell: 0 });
+  const masterMeterRef = useRef<HTMLDivElement | null>(null);
   const feedStatsRef = useRef<FeedStats>({ raw: 0, accepted: 0, lastSize: 0 });
+
+  const [params, setParams] = useState<ResonatorAudioParams>({ ...DEFAULT_RESONATOR_AUDIO });
+  const [market, setMarket] = useState<Market>("BTC");
+  const [minOrderSize, setMinOrderSize] = useState(0);
+  const [shaping, setShaping] = useState<FeedShaping>("aggregated");
+  const [windowMs, setWindowMs] = useState(250);
+  const [priceBucket, setPriceBucket] = useState(1);
+  const [feedMode, setFeedMode] = useState<FeedMode>("off");
+  const [feedStatus, setFeedStatus] = useState<ConnectionStatus | "off">("off");
+  const [feedStats, setFeedStats] = useState<FeedStats>({ raw: 0, accepted: 0, lastSize: 0 });
+  const [status, setStatus] = useState("Connect a market feed to drive the resonator");
+
+  // The driver captures its callbacks once at mount, so mirror the live values
+  // they read through refs.
+  const settingsRef = useRef<ScannerSettings>(buildSettings(market, minOrderSize, windowMs));
   const visualSettingsRef = useRef({
     market: "BTC" as Market,
     mode: "live" as const,
@@ -76,46 +83,12 @@ export function SynthApp() {
     turbulence: 0.62,
   });
 
-  const trackMeterRefs = {
-    main: useRef<HTMLDivElement | null>(null),
-  };
-  const flowMeterRef = useRef<HTMLDivElement | null>(null);
-  const masterMeterRef = useRef<HTMLDivElement | null>(null);
-
-  const [tracks, setTracks] = useState<Record<TrackId, TrackParams>>(cloneTracks);
-  const [sharedFx, setSharedFx] = useState<SharedFxParams>({ ...DEFAULT_SHARED_FX });
-  const [flow, setFlow] = useState<FlowParams>({ ...DEFAULT_FLOW });
-  const [master, setMaster] = useState<MasterParams>({ ...DEFAULT_MASTER });
-  const [trackPlaying, setTrackPlaying] = useState<Record<TrackId, boolean>>({ main: false });
-  const [flowPlaying, setFlowPlaying] = useState(false);
-
-  const [market, setMarket] = useState<Market>("BTC");
-  const [minOrderSize, setMinOrderSize] = useState(0);
-  const [shaping, setShaping] = useState<FeedShaping>("aggregated");
-  const [windowMs, setWindowMs] = useState(250);
-  const [priceBucket, setPriceBucket] = useState(1);
-  const [feedMode, setFeedMode] = useState<FeedMode>("off");
-  const [feedStatus, setFeedStatus] = useState<ConnectionStatus | "off">("off");
-  const [feedStats, setFeedStats] = useState<FeedStats>({ raw: 0, accepted: 0, lastSize: 0 });
-  const [status, setStatus] = useState("Press a track to audition, or connect a market feed to drive them");
-
-  // The driver captures handleFeedTrade once at mount, so mirror live values it reads.
-  const tracksStateRef = useRef(tracks);
-  tracksStateRef.current = tracks;
-  const minOrderSizeRef = useRef(minOrderSize);
-  minOrderSizeRef.current = minOrderSize;
-
   useEffect(() => {
-    const masterBus = new MasterBus();
-    const fxRack = new SharedFxRack(masterBus.input, DEFAULT_SHARED_FX);
-    const builtTracks: Record<TrackId, DropletTrack> = {
-      main: new DropletTrack(fxRack.input, TRACK_DEFAULTS.main),
-    };
-    const flowVoice = new FlowVoice(fxRack.input);
-    masterRef.current = masterBus;
-    tracksRef.current = builtTracks;
-    flowRef.current = flowVoice;
-    sharedFxRef.current = fxRack;
+    const audio = new AudioEngine();
+    audio.setSettings(settingsRef.current);
+    audio.setResonatorParams(params);
+    audioRef.current = audio;
+
     if (visualCanvasRef.current) {
       const renderer = new LiquidRenderer(visualCanvasRef.current);
       rendererRef.current = renderer;
@@ -123,12 +96,16 @@ export function SynthApp() {
     }
 
     const driver = new MarketDriver(market, {
-      onTrade: handleFeedTrade,
-      onSignal: handleFeedSignal,
+      onTrade: (trade) => {
+        audioRef.current?.playTrade(trade);
+        rendererRef.current?.pushTrade(trade, visualSettingsRef.current);
+      },
+      onSignal: (signal: FlowSignal) => audioRef.current?.playSignal(signal),
       onStatus: (s) => setFeedStatus(s),
       onRawTrade: (trade) => {
         feedStatsRef.current.raw += 1;
         feedStatsRef.current.lastSize = trade.size;
+        audioRef.current?.playTrade(trade, { micro: true });
       },
       onAcceptedTrade: () => {
         feedStatsRef.current.accepted += 1;
@@ -140,7 +117,6 @@ export function SynthApp() {
     driver.setPriceBucket(priceBucket);
     driverRef.current = driver;
 
-    let frame = 0;
     const statsTimer = window.setInterval(() => {
       const next = feedStatsRef.current;
       setFeedStats((prev) =>
@@ -148,13 +124,11 @@ export function SynthApp() {
       );
     }, 250);
 
+    let frame = 0;
     const tick = () => {
-      for (const id of TRACK_IDS) {
-        const el = trackMeterRefs[id].current;
-        if (el) el.style.transform = `scaleX(${builtTracks[id].getLevel().toFixed(3)})`;
+      if (masterMeterRef.current) {
+        masterMeterRef.current.style.transform = `scaleX(${(audioRef.current?.getLevel() ?? 0).toFixed(3)})`;
       }
-      if (flowMeterRef.current) flowMeterRef.current.style.transform = `scaleX(${flowVoice.getLevel().toFixed(3)})`;
-      if (masterMeterRef.current) masterMeterRef.current.style.transform = `scaleX(${masterBus.getLevel().toFixed(3)})`;
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
@@ -163,15 +137,19 @@ export function SynthApp() {
       cancelAnimationFrame(frame);
       window.clearInterval(statsTimer);
       driver.dispose();
-      for (const id of TRACK_IDS) builtTracks[id].dispose();
-      flowVoice.dispose();
-      fxRack.dispose();
-      masterBus.dispose();
+      audio.reset();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Keep the resonator engine + feed settings in sync with the UI.
   useEffect(() => {
+    audioRef.current?.setResonatorParams(params);
+  }, [params]);
+
+  useEffect(() => {
+    settingsRef.current = buildSettings(market, minOrderSize, windowMs);
+    audioRef.current?.setSettings(settingsRef.current);
     Object.assign(visualSettingsRef.current, {
       market,
       minPrintSize: minOrderSize,
@@ -179,131 +157,26 @@ export function SynthApp() {
     });
   }, [market, minOrderSize, windowMs]);
 
-  // ── Feed → tracks mapping ────────────────────────────────────────────────
-  // buys drive the High track, sells the Low track, liquidation/cascade the Mid
-  // track. Large prints and clusters swell the matching track's FX.
-  const handleFeedTrade = (trade: TradeEvent) => {
-    const t = tracksRef.current;
-    if (!t) return;
-    const side = trade.side;
-
-    const droplet = tracksStateRef.current.main.droplet;
-    // Buy = upper register, sell = lower; size shapes pitch + ring within the
-    // band. Pitch fader retunes everything. Shared with the visualizer engine.
-    const shaped = shapeTrade(trade, {
-      baseDecay: droplet.decay,
-      tune: droplet.pitch / TUNE_REF,
-      floor: minOrderSizeRef.current,
-    });
-
-    t.main.triggerDrop(undefined, { freq: shaped.freq, amp: shaped.amp, decay: shaped.decay });
-    rendererRef.current?.pushTrade(trade, visualSettingsRef.current);
-    if (shaped.pulse > 0) sharedFxRef.current?.pulse(shaped.pulse);
-    if (shaped.second) {
-      t.main.triggerDrop(Tone.now() + 0.12, shaped.second);
-      setStatus(`${side === "buy" ? "Buy" : "Sell"} ${shaped.tier.id} ${usd(trade.size)} → ${Math.round(shaped.freq)} Hz`);
-    }
+  const updateParam = (key: keyof ResonatorAudioParams, value: number) => {
+    setParams((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleFeedSignal = (signal: FlowSignal) => {
-    const boost = clamp(signal.intensity * 0.65, 0.25, 1.8);
-    const side: Side = signal.side === "sell" ? "sell" : "buy";
-    if (signal.timestamp - lastSignalTriggerRef.current[side] < SIGNAL_TRIGGER_GAP_MS) return;
-    lastSignalTriggerRef.current[side] = signal.timestamp;
-
-    sharedFxRef.current?.pulse(boost);
-    setStatus(`${signal.label} → swell (${boost.toFixed(1)}×)`);
-  };
-
-  // ── Param updates ──────────────────────────────────────────────────────────
-  const applySection = (
-    track: DropletTrack,
-    section: keyof TrackParams,
-    params: TrackParams[keyof TrackParams],
-    mode = feedMode,
-  ) => {
-    if (section === "droplet") {
-      const droplet = params as TrackParams["droplet"];
-      track.setDroplet(isDataMode(mode) ? { ...droplet, density: 0 } : droplet);
-    }
-  };
-
-  const updateParam = <S extends keyof TrackParams>(id: TrackId, section: S, key: string, value: number) => {
-    setTracks((prev) => {
-      const sectionParams = { ...prev[id][section], [key]: value } as TrackParams[S];
-      applySection(tracksRef.current![id], section, sectionParams);
-      return { ...prev, [id]: { ...prev[id], [section]: sectionParams } };
-    });
-  };
-
-  const updateFlow = (key: keyof FlowParams, value: number) => {
-    setFlow((prev) => {
-      const next = { ...prev, [key]: value };
-      flowRef.current?.applyParams(next);
-      return next;
-    });
-  };
-
-  const updateMaster = (key: keyof MasterParams, value: number) => {
-    setMaster((prev) => {
-      const next = { ...prev, [key]: value };
-      masterRef.current?.applyParams(next);
-      return next;
-    });
-  };
-
-  const updateSharedFx = <S extends keyof SharedFxParams>(section: S, key: string, value: number) => {
-    setSharedFx((prev) => {
-      const sectionParams = { ...prev[section], [key]: value } as SharedFxParams[S];
-      const next = { ...prev, [section]: sectionParams };
-      if (section === "klon") sharedFxRef.current?.setKlon(sectionParams as SharedFxParams["klon"]);
-      else if (section === "deco") sharedFxRef.current?.setDeco(sectionParams as SharedFxParams["deco"]);
-      else if (section === "elcap") sharedFxRef.current?.setEcho(sectionParams as SharedFxParams["elcap"]);
-      else sharedFxRef.current?.setBigSky(sectionParams as SharedFxParams["bigSky"]);
-      return next;
-    });
-  };
-
-  // ── Transport ────────────────────────────────────────────────────────────
-  const toggleTrack = async (id: TrackId) => {
-    const track = tracksRef.current?.[id];
-    if (!track) return;
-    const playing = await track.toggle();
-    setTrackPlaying((prev) => ({ ...prev, [id]: playing }));
-    setStatus(playing ? `${TRACK_META[id].title} track running` : `${TRACK_META[id].title} track stopped`);
-  };
-
-  const toggleFlow = async () => {
-    const voice = flowRef.current;
-    if (!voice) return;
-    const playing = await voice.toggle();
-    setFlowPlaying(playing);
-    setStatus(playing ? "Flow running" : "Flow stopped");
+  const updateSelect = <K extends "mode" | "output">(key: K, value: ResonatorAudioParams[K]) => {
+    setParams((prev) => ({ ...prev, [key]: value }));
   };
 
   const setMode = async (mode: FeedMode) => {
-    if (mode !== "off") {
-      await Tone.start();
-      const context = Tone.getContext();
-      if (context.state !== "running") await context.resume();
-    }
     setFeedMode(mode);
     feedStatsRef.current = { raw: 0, accepted: 0, lastSize: 0 };
     setFeedStats({ raw: 0, accepted: 0, lastSize: 0 });
     driverRef.current?.setMode(mode);
-    for (const id of TRACK_IDS) {
-      const track = tracksRef.current?.[id];
-      if (track) applySection(track, "droplet", tracks[id].droplet, mode);
-    }
+    await audioRef.current?.setEnabled(settingsRef.current, mode !== "off");
     if (mode === "off") {
-      for (const id of TRACK_IDS) tracksRef.current?.[id].stop();
-      setTrackPlaying({ main: false });
       setFeedStatus("off");
+      setStatus("Feed disconnected");
     } else {
-      await Promise.all(TRACK_IDS.map((id) => tracksRef.current?.[id].start()));
-      setTrackPlaying({ main: true });
+      setStatus(`Feed → ${mode}; resonator armed`);
     }
-    setStatus(mode === "off" ? "Feed disconnected" : `Feed → ${mode}; tracks armed, density disabled`);
   };
 
   const changeMarket = (next: Market) => {
@@ -339,77 +212,39 @@ export function SynthApp() {
   };
 
   const reset = () => {
-    const fresh = cloneTracks();
-    setTracks(fresh);
-    for (const id of TRACK_IDS) tracksRef.current?.[id].applyAll(fresh[id]);
-    setSharedFx({ ...DEFAULT_SHARED_FX });
-    sharedFxRef.current?.applyAll({ ...DEFAULT_SHARED_FX });
-    setMaster({ ...DEFAULT_MASTER });
-    masterRef.current?.applyParams({ ...DEFAULT_MASTER });
-    setFlow({ ...DEFAULT_FLOW });
-    flowRef.current?.applyParams({ ...DEFAULT_FLOW });
-    setStatus("Reset to defaults");
+    setParams({ ...DEFAULT_RESONATOR_AUDIO });
+    setStatus("Resonator reset to defaults");
   };
 
-  const renderGroups = <S extends keyof TrackParams>(
-    groups: FaderGroup<string>[],
-    id: TrackId,
-    section: S,
-    params: TrackParams[S],
-  ) =>
-    groups.map((group) => (
-      <fieldset className="fader-group" key={group.title}>
-        <legend>{group.title}</legend>
-        <div className="fader-row">
-          {group.faders.map((spec) => (
-              <Fader
-                key={spec.key}
-                spec={spec}
-                value={
-                  isDataMode(feedMode) && section === "droplet" && spec.key === "density"
-                    ? 0
-                    : (params as unknown as Record<string, number>)[spec.key]
-                }
-                onChange={(v) => updateParam(id, section, spec.key, v)}
-                disabled={isDataMode(feedMode) && section === "droplet" && spec.key === "density"}
-              />
-          ))}
-        </div>
-      </fieldset>
-    ));
-
-  const renderFxGroups = <S extends keyof SharedFxParams>(
-    groups: FaderGroup<string>[],
-    section: S,
-    params: SharedFxParams[S],
-  ) =>
-    groups.map((group) => (
-      <fieldset className="fader-group" key={group.title}>
-        <legend>{group.title}</legend>
-        <div className="fader-row">
-          {group.faders.map((spec) => (
-            <Fader
-              key={spec.key}
-              spec={spec}
-              value={(params as unknown as Record<string, number>)[spec.key]}
-              onChange={(v) => updateSharedFx(section, spec.key, v)}
-            />
-          ))}
-        </div>
-      </fieldset>
-    ));
+  const renderFaders = (title: string, specs: FaderSpec<keyof ResonatorAudioParams>[]) => (
+    <fieldset className="fader-group">
+      <legend>{title}</legend>
+      <div className="fader-row">
+        {specs.map((spec) => (
+          <Fader
+            key={spec.key}
+            spec={spec}
+            value={params[spec.key] as number}
+            onChange={(value) => updateParam(spec.key, value)}
+          />
+        ))}
+      </div>
+    </fieldset>
+  );
 
   return (
     <div className="grain-lab">
       <header className="lab-head">
-        <div>
-          <p className="kicker">Liquidated · Tone.js</p>
-          <h1>Water Synth</h1>
-        </div>
-        <a className="back-link" href="/index.html">← Visualizer</a>
+        <img className="brand-logo" src="/assets/liquidated_logo.svg" alt="Liquidated" />
+        <nav className="lab-links">
+          <a className="back-link" href="/index.html">← Visualizer</a>
+          <a className="back-link" href="/tape.html">Tape →</a>
+        </nav>
       </header>
 
-      <div className="synth-visual" aria-label="Tape-driven buy and sell drops">
+      <p className="kicker">Resonator synth · Original Rings WASM</p>
+
+      <div className="synth-visual" aria-label="Feed-driven buy and sell resonance">
         <canvas ref={visualCanvasRef}></canvas>
       </div>
 
@@ -476,76 +311,31 @@ export function SynthApp() {
         </span>
       </section>
 
-      {TRACK_IDS.map((id) => (
-        <section className={`track track-${id}`} key={id}>
-          <div className="transport-bar">
-            <button
-              className={`play-btn ${trackPlaying[id] ? "on" : ""}`}
-              type="button"
-              onClick={() => toggleTrack(id)}
-            >
-              {trackPlaying[id] ? `■ ${TRACK_META[id].title}` : `▶ ${TRACK_META[id].title}`}
-            </button>
-            <div className="sample-name">
-              {TRACK_META[id].title} droplets — <strong>{TRACK_META[id].role}</strong> · own FX rack
-            </div>
-            <div className="level-meter"><div ref={trackMeterRefs[id]} className="level-fill" /></div>
-          </div>
-
-          <div className="fader-board">
-            {renderGroups(TRACK_DROPLET_GROUPS, id, "droplet", tracks[id].droplet)}
-          </div>
-        </section>
-      ))}
-
-      <section className="transport-bar ambient-bar">
-        <div className="sample-name">End FX — shared Klon · Deco · El Cap · Big Sky</div>
-      </section>
-
-      <div className="fader-board">
-        {renderFxGroups(KLON_GROUPS, "klon", sharedFx.klon)}
-        {renderFxGroups(DECO_GROUPS, "deco", sharedFx.deco)}
-        {renderFxGroups(ELCAP_GROUPS, "elcap", sharedFx.elcap)}
-        {renderFxGroups(BIGSKY_GROUPS, "bigSky", sharedFx.bigSky)}
-      </div>
-
-      <section className="transport-bar ambient-bar">
-        <button className={`play-btn ${flowPlaying ? "on" : ""}`} type="button" onClick={toggleFlow}>
-          {flowPlaying ? "■ Flow" : "▶ Flow"}
-        </button>
-        <div className="sample-name">Flow — turbulence bed + bubbling (shared space reverb)</div>
-        <div className="level-meter"><div ref={flowMeterRef} className="level-fill" /></div>
-      </section>
-
-      <div className="fader-board">
-        {FLOW_GROUPS.map((group) => (
-          <fieldset className="fader-group ambient-group" key={group.title}>
-            <legend>{group.title}</legend>
-            <div className="fader-row">
-              {group.faders.map((spec) => (
-                <Fader key={spec.key} spec={spec} value={flow[spec.key]} onChange={(v) => updateFlow(spec.key, v)} />
-              ))}
-            </div>
-          </fieldset>
-        ))}
-      </div>
-
-      <section className="transport-bar ambient-bar">
-        <div className="sample-name">Master — scale · tempo · output (shared by all tracks)</div>
+      <section className="transport-bar">
+        <label className="select-field">
+          <span>Model</span>
+          <select value={params.mode} onChange={(event) => updateSelect("mode", event.target.value as ResonatorMode)}>
+            <option value="modal">Modal resonator</option>
+            <option value="sympathetic">Sympathetic strings</option>
+            <option value="string">Modulated string</option>
+          </select>
+        </label>
+        <label className="select-field">
+          <span>Output</span>
+          <select value={params.output} onChange={(event) => updateSelect("output", event.target.value as OutputMode)}>
+            <option value="mix">Odd + Even</option>
+            <option value="odd">Odd only</option>
+            <option value="even">Even only</option>
+          </select>
+        </label>
+        <div className="sample-name">Buys ring the Odd core · sells the Even resonance</div>
         <div className="level-meter"><div ref={masterMeterRef} className="level-fill" /></div>
       </section>
 
       <div className="fader-board">
-        {MASTER_GROUPS.map((group) => (
-          <fieldset className="fader-group" key={group.title}>
-            <legend>{group.title}</legend>
-            <div className="fader-row">
-              {group.faders.map((spec) => (
-                <Fader key={spec.key} spec={spec} value={master[spec.key]} onChange={(v) => updateMaster(spec.key, v)} />
-              ))}
-            </div>
-          </fieldset>
-        ))}
+        {renderFaders("Voices / pitch", VOICE_FADERS)}
+        {renderFaders("Resonator", RESONATOR_FADERS)}
+        {renderFaders("ADSR envelope", ENV_FADERS)}
       </div>
 
       <p className="lab-status">{status}</p>
@@ -555,4 +345,21 @@ export function SynthApp() {
       </section>
     </div>
   );
+}
+
+function buildSettings(market: Market, minPrintSize: number, clusterWindowMs: number): ScannerSettings {
+  return {
+    market,
+    mode: "live",
+    minPrintSize,
+    maxPrintSize: MAX_PRINT_SIZE,
+    sensitivity: 1.15,
+    clusterWindowMs,
+    volume: 0.4,
+    timbre: 0.5,
+    space: 0.45,
+    cascadeIntensity: 1,
+    viscosity: 0.985,
+    turbulence: 0.62,
+  };
 }
