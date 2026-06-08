@@ -214,9 +214,14 @@ export class FluidSimulation {
     const x = clamp(positionedX, 0.035, 0.965);
     const y = clamp(input.y, 0.08, 0.92);
 
+    // Portrait flips the drop's Y vs landscape (the heightmap's double negation puts
+    // (0.5 - y) at the top), so use (y - 0.5) in portrait to land green buys at the
+    // bottom — matching the dye glow (v) and the dominance gradient. Landscape keeps
+    // the original mapping that aligns with the desktop dye (1 - v).
+    const dropY = (this.orientation === "portrait" ? y - 0.5 : 0.5 - y) * this.geomHeight;
     this.pendingDrops.push({
       x: (x - 0.5) * this.geomWidth,
-      y: (0.5 - y) * this.geomHeight,
+      y: dropY,
       radius,
       strength,
       side,
