@@ -110,9 +110,13 @@ export class AudioEngine {
       this.reset();
       return false;
     }
+    // Unlock the audio context synchronously inside the user gesture; iOS Safari
+    // refuses to start audio once we're behind the WASM-load await in ensure().
+    this.voice ??= new RingsWasmVoice();
+    this.voice.unlock();
     await this.ensure();
     this.enabled = enabled;
-    await this.voice?.resume();
+    await this.voice.resume();
     return this.enabled;
   }
 
@@ -256,7 +260,8 @@ export class AudioEngine {
 
   private async ensure(): Promise<void> {
     if (this.ready) return;
-    this.voice = new RingsWasmVoice();
+    // Reuse the voice unlocked during the gesture (setEnabled) so we keep its context.
+    this.voice ??= new RingsWasmVoice();
     await this.voice.init();
     this.ready = true;
     this.applyIdlePatch();

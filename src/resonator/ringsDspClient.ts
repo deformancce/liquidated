@@ -48,12 +48,40 @@ export class RingsWasmVoice {
   private evenPtr = 0;
   private allocatedFrames = 0;
 
+  /**
+   * Create the AudioContext synchronously. iOS Safari only unlocks audio when the
+   * context is created/resumed inside a user gesture, so this must never sit behind
+   * the WASM-load await in init().
+   */
+  private ensureContext(): AudioContext {
+    if (!this.ctx) {
+      const Ctor = (window.AudioContext || window.webkitAudioContext) as typeof AudioContext;
+      this.ctx = new Ctor({ sampleRate: 48000 });
+    }
+    return this.ctx;
+  }
+
+  /**
+   * Synchronous audio unlock for mobile Safari. Must run directly inside a tap
+   * handler, before any await: it creates/resumes the context and primes it with a
+   * one-sample silent buffer so the buffer sources we render later are audible.
+   */
+  unlock(): void {
+    const ctx = this.ensureContext();
+    if (ctx.state !== "running") void ctx.resume();
+    const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+  }
+
   async init() {
     if (this.module) return;
+    const ctx = this.ensureContext();
     const factory = await loadFactory();
-    this.ctx = new AudioContext({ sampleRate: 48000 });
     this.module = await factory({ locateFile: (path) => `/rings/${path}` });
-    this.module._rings_init(this.ctx.sampleRate);
+    this.module._rings_init(ctx.sampleRate);
     this.initReverb();
   }
 
