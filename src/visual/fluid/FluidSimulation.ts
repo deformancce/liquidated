@@ -50,6 +50,11 @@ const FBO_WIDTH = 512;
 const FBO_HEIGHT = 256;
 const MAX_PENDING_DROPS = 48;
 const DROPS_PER_FRAME = 10;
+// dyeSplats is only drained by age inside drawReflectionTexture(), which runs in
+// the render() rAF loop. Browsers pause rAF in background tabs while the trade
+// feed keeps pushing splats, so without a hard cap the array grows unbounded and
+// the first frame back has to paint thousands of full-canvas gradients (freeze).
+const MAX_DYE_SPLATS = 80;
 const DEFAULT_MOUSE_SIZE = 63;
 const DEFAULT_WAVE_HEIGHT = 1.1;
 
@@ -304,6 +309,9 @@ export class FluidSimulation {
       strength: clamp(strength * 0.55, 0.32, 1),
       seed: Math.random() * Math.PI * 2,
     });
+    if (this.dyeSplats.length > MAX_DYE_SPLATS) {
+      this.dyeSplats.splice(0, this.dyeSplats.length - MAX_DYE_SPLATS);
+    }
   }
 
   private drawReflectionTexture(dt: number): void {
