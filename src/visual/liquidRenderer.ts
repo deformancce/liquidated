@@ -116,6 +116,10 @@ export class LiquidRenderer {
     this.fluid.smoothNow();
   }
 
+  resumeFromIdle(): void {
+    this.fluid.resumeFromIdle();
+  }
+
   render(settings: ScannerSettings): void {
     this.fluid.setConfig({
       densityDissipation: 1,

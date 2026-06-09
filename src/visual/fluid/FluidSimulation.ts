@@ -205,6 +205,15 @@ export class FluidSimulation {
     this.smoothWater(10);
   }
 
+  // Sleep / background tab pauses the render rAF while the feed keeps queuing
+  // drops + splats. On return, drop that transient backlog and reset frame
+  // timing so the first frame is cheap instead of replaying everything at once.
+  resumeFromIdle(): void {
+    this.pendingDrops.length = 0;
+    this.dyeSplats.length = 0;
+    this.lastRender = performance.now();
+  }
+
   splat(input: FluidSplat): void {
     const side = input.color[1] > input.color[0] ? "buy" : input.color[0] > input.color[1] ? "sell" : "neutral";
     const minDim = Math.min(this.geomWidth, this.geomHeight);

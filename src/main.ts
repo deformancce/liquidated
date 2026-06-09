@@ -667,6 +667,12 @@ const syncOrientation = () => renderer?.setOrientation(mobileMedia.matches ? "po
 mobileMedia.addEventListener("change", syncOrientation);
 syncOrientation();
 
+// Sleep / background pauses the render loop while the feed keeps queuing work;
+// on return, drop the backlog so the page doesn't stall replaying it.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) renderer?.resumeFromIdle();
+});
+
 // Grab/drag the tape up or down (it grows above the always-visible flow
 // metrics); a tap toggles, release snaps open or closed.
 const tapeMaxHeight = () => Math.min(window.innerHeight * 0.56, 460);
