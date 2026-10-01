@@ -104,6 +104,13 @@ export class AudioEngine {
     return this.setEnabled(settings, !this.enabled);
   }
 
+  /** Prime Web Audio synchronously while transient user activation is present. */
+  prime(): void {
+    this.voice ??= new RingsWasmVoice();
+    primeIosAudioSession();
+    this.voice.unlock();
+  }
+
   async setEnabled(settings: ScannerSettings, enabled: boolean): Promise<boolean> {
     this.settings = settings;
     if (!enabled) {
@@ -115,12 +122,12 @@ export class AudioEngine {
     // refuses to start audio once we're behind the WASM-load await in ensure().
     // primeIosAudioSession() also flips iOS into "playback" so the ring switch
     // doesn't silence us — both must run before the first await.
-    this.voice ??= new RingsWasmVoice();
-    primeIosAudioSession();
-    this.voice.unlock();
+    this.prime();
     await this.ensure();
+    const voice = this.voice;
+    if (!voice) return false;
     this.enabled = enabled;
-    await this.voice.resume();
+    await voice.resume();
     return this.enabled;
   }
 

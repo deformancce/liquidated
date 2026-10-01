@@ -7,12 +7,118 @@
     <title>Liquidated</title>
     <link rel="stylesheet" href="styles.css">
   </head>
-  <body>
+  <body class="landing-active">
+    <section class="landing" id="landing" aria-label="Liquidated landing page">
+      <div class="landing-noise" aria-hidden="true"></div>
+      <header class="landing-nav">
+        <a class="landing-brand" href="#landing" aria-label="Liquidated home">
+          <img src="/assets/liquidated_logo.svg" alt="Liquidated">
+        </a>
+        <nav aria-label="Main navigation">
+          <a href="#instrument">Instrument</a>
+          <a href="#signal">Signal</a>
+          <a href="https://liquidated.gitbook.io/docs/" target="_blank" rel="noopener noreferrer">Docs</a>
+        </nav>
+        <button class="landing-launch landing-launch--small" type="button" data-enter-app>
+          <span class="live-dot" aria-hidden="true"></span>
+          Open app
+        </button>
+      </header>
+
+      <main class="landing-content">
+        <section class="landing-hero" id="signal">
+          <div class="hero-kicker"><span>Live signal</span><span>Powered by Hyperliquid</span></div>
+          <h1>One market.<br><em>Every sense.</em></h1>
+          <p class="hero-copy"><strong>See and hear the market move autonomously.</strong> Liquidated translates live order flow into a fluid field of sound and motion, so pressure becomes instantly perceptible.</p>
+          <div class="hero-actions">
+            <button class="landing-launch" type="button" data-enter-app>
+              Enter live instrument
+              <span aria-hidden="true">↗</span>
+            </button>
+            <a href="#instrument">Explore the signal</a>
+          </div>
+          <div class="hero-wave-schematic" aria-hidden="true">
+            <span class="wave-label wave-label--buy">BUY IMPACT</span>
+            <span class="wave-label wave-label--sell">SELL IMPACT</span>
+            <svg viewBox="0 0 760 250" preserveAspectRatio="none">
+              <g class="wave-contours">
+                <path d="M0 50 C92 47 148 53 206 48 C250 44 258 24 302 26 C350 28 363 51 416 53 C474 55 490 70 540 69 C596 68 628 49 760 51"></path>
+                <path d="M0 78 C90 73 154 84 212 74 C254 67 266 42 310 45 C354 48 370 79 423 80 C470 81 500 95 548 92 C603 88 644 75 760 78"></path>
+                <path d="M0 108 C90 101 157 117 220 102 C260 93 276 63 320 67 C363 71 381 108 430 109 C480 110 512 124 561 118 C616 112 650 104 760 107"></path>
+                <path d="M0 140 C88 131 165 151 229 132 C270 120 288 86 331 91 C374 96 393 139 442 140 C493 141 525 155 575 147 C628 139 669 136 760 139"></path>
+                <path d="M0 174 C96 163 171 187 242 163 C281 150 303 113 345 118 C390 124 407 170 457 173 C511 176 542 188 590 178 C641 167 686 170 760 173"></path>
+                <path d="M0 210 C103 198 183 224 255 197 C298 181 318 146 361 151 C405 157 426 205 475 209 C531 214 559 221 611 211 C659 202 704 207 760 209"></path>
+              </g>
+              <g class="wave-impact wave-impact--buy">
+                <ellipse cx="318" cy="122" rx="29" ry="10"></ellipse>
+                <ellipse cx="318" cy="122" rx="57" ry="20"></ellipse>
+                <ellipse cx="318" cy="122" rx="88" ry="31"></ellipse>
+                <circle cx="318" cy="122" r="3"></circle>
+              </g>
+              <g class="wave-impact wave-impact--sell">
+                <ellipse cx="566" cy="151" rx="25" ry="9"></ellipse>
+                <ellipse cx="566" cy="151" rx="51" ry="18"></ellipse>
+                <ellipse cx="566" cy="151" rx="79" ry="28"></ellipse>
+                <circle cx="566" cy="151" r="3"></circle>
+              </g>
+            </svg>
+          </div>
+          <div class="hero-status" aria-label="System status">
+            <span><i></i> Data stream ready</span>
+            <span>NO WALLET REQUIRED</span>
+          </div>
+        </section>
+
+        <section class="market-rail" aria-label="Supported markets">
+          <span class="rail-label">LIVE MARKETS</span>
+          <div><b>BTC</b><span>FLOW / USD</span></div>
+          <div><b>ETH</b><span>FLOW / USD</span></div>
+          <div><b>SOL</b><span>FLOW / USD</span></div>
+          <div><b>HYPE</b><span>FLOW / USD</span></div>
+          <span class="rail-end">24 / 7 / 365</span>
+        </section>
+
+        <section class="landing-section" id="instrument">
+          <div class="section-index">THE INSTRUMENT</div>
+          <div class="section-heading">
+            <h2>Trading data,<br>made <em>physical.</em></h2>
+            <p>Every market order becomes a force. Buys and sells displace the field, large prints carry more weight, and live liquidations cut through the noise.</p>
+          </div>
+          <div class="feature-grid">
+            <article>
+              <span>TRADE SIZE → IMPACT</span>
+              <h3>See the flow</h3>
+              <p>A fluid market map reveals direction, intensity and imbalance without another candlestick.</p>
+            </article>
+            <article>
+              <span>SIDE + SIZE → TONE</span>
+              <h3>Hear the pressure</h3>
+              <p>A generative resonator translates market activity into an evolving, spatial soundscape.</p>
+            </article>
+            <article>
+              <span>RAW FLOW → SIGNAL</span>
+              <h3>Read the signal</h3>
+              <p>Filter raw prints, aggregate flow and isolate the market events that actually matter.</p>
+            </article>
+          </div>
+        </section>
+
+      </main>
+
+      <footer class="landing-footer">
+        <img src="/assets/liquidated_logo.svg" alt="Liquidated">
+        <p>Experimental market sonification.<br>Not financial advice.</p>
+        <a href="https://github.com/deformancce/liquidated" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      </footer>
+    </section>
+
     <main class="app-shell">
       <canvas id="flowCanvas" aria-label="Liquidated flow visualizer"></canvas>
 
       <section class="feed-panel" aria-label="Market feed">
-        <img class="brand-logo" src="/assets/liquidated_logo.svg" alt="Liquidated">
+        <a class="brand-home" href="/" aria-label="Back to Liquidated landing page">
+          <img class="brand-logo" src="/assets/liquidated_logo.svg" alt="Liquidated">
+        </a>
         <button class="burger" id="burgerToggle" type="button" aria-label="Menu" aria-expanded="false">
           <span></span><span></span><span></span>
         </button>
@@ -61,9 +167,11 @@
             </div>
           </div>
         </details>
-        <div class="segment" aria-label="Data mode">
-          <button id="offButton" class="active" type="button">Off</button>
-          <button id="liveButton" type="button">Live</button>
+        <div class="segment" aria-label="Sound">
+          <button id="muteButton" class="mute-button" type="button" aria-pressed="false" aria-label="Turn sound on" data-audio-state="muted">
+            <span class="sound-state-dot" aria-hidden="true"></span>
+            <span id="muteLabel">Sound off</span>
+          </button>
           <span id="statusLight" class="status-light"></span>
           <span id="statusText">Connecting</span>
         </div>
@@ -123,18 +231,18 @@
           <div class="liquid-controls">
             <label>
               <span>mouseSize</span>
-              <input id="liqMouseSize" type="range" min="1" max="240" step="1" value="63">
-              <b id="liqMouseSizeValue">63</b>
+              <input id="liqMouseSize" type="range" min="0" max="100" step="1" value="50">
+              <b id="liqMouseSizeValue">38</b>
             </label>
             <label>
               <span>viscosity</span>
-              <input id="liqViscosity" type="range" min="0.9" max="0.999" step="0.001" value="0.985">
-              <b id="liqViscosityValue">0.985</b>
+              <input id="liqViscosity" type="range" min="0" max="100" step="1" value="50">
+              <b id="liqViscosityValue">0.996</b>
             </label>
             <label>
               <span>waveHeight</span>
-              <input id="liqWaveHeight" type="range" min="0.1" max="2.5" step="0.05" value="1.1">
-              <b id="liqWaveHeightValue">1.10</b>
+              <input id="liqWaveHeight" type="range" min="0" max="100" step="1" value="50">
+              <b id="liqWaveHeightValue">1.95</b>
             </label>
             <button id="smoothWater" class="save-audio-settings" type="button">smoothWater</button>
           </div>
@@ -174,7 +282,7 @@
         </div>
       </aside>
 
-      <a class="info-link" href="https://github.com/deformancce/liquidated/blob/main/docs/how-it-works.md" target="_blank" rel="noopener noreferrer" aria-label="What is Liquidated? — Documentation" title="What is Liquidated? — Documentation">i</a>
+      <a class="info-link" href="https://liquidated.gitbook.io/docs/" target="_blank" rel="noopener noreferrer" aria-label="Liquidated documentation on GitBook" title="Liquidated documentation on GitBook">i</a>
 
     </main>
 

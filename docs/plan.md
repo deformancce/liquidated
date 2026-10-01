@@ -41,17 +41,18 @@ Liquidation handling:
 - `confirmedLiquidation` is reserved for direct public liquidation data if a reliable feed is available.
 - `cascadeRisk` and `forcedFlowDetected` are derived from trade clusters, price velocity, volatility, and OI changes.
 
-## Technical Direction
+## Current Technical Direction
 
-Target stack:
+Current stack:
 
 - Vite
 - TypeScript
-- PixiJS for the liquid renderer
-- Tone.js for synth routing, envelopes, filters, and effects
-- Small internal store first; add Zustand only when UI state needs it
+- Three.js and `GPUComputationRenderer` for the liquid simulation
+- Original Mutable Instruments Rings DSP compiled to WebAssembly
+- Web Audio for playback, envelopes, routing, and browser audio-session handling
+- Small internal state modules without an external application store
 
-The first implementation can keep a Canvas 2D renderer until PixiJS is installed. Module boundaries should already match the target architecture.
+The main product now has a landing layer and a live-instrument layer. Entering the instrument starts the feed and primes audio within the initiating pointer gesture. Feed state and sound state are deliberately independent.
 
 ## Modules
 
@@ -104,6 +105,17 @@ The first implementation can keep a Canvas 2D renderer until PixiJS is installed
 - Tunable audio: volume, sensitivity, timbre, space, cascade intensity
 - Liquid visual layer reacting to buy/sell pressure and cluster intensity
 - Demo mode remains available for design work without a live socket
+
+### Implemented beyond the initial MVP
+
+- Public landing page with a direct transition into the live instrument
+- Independent sound mute/resume while the live data and visuals continue
+- Original Rings DSP WASM artifact served in the browser
+- Mobile Safari audio unlock and iOS playback-session handling
+- Portrait-aware buy/sell placement and responsive tape sheet
+- Directional surface tint from rolling buy/sell dominance
+- Render-backlog protection for backgrounded or sleeping tabs
+- Dedicated tape, synth, resonator, and visual-lab views
 
 ## MVP 2
 

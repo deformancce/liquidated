@@ -5,16 +5,16 @@ import { clamp } from "../utils/format";
 import { FluidSimulation, type LiquidVisualParams } from "./fluid/FluidSimulation";
 
 const COLORS = {
-  buy: [38, 255, 148] as [number, number, number],
-  sell: [255, 52, 76] as [number, number, number],
-  neutral: [235, 245, 248] as [number, number, number],
+  buy: [53, 214, 166] as [number, number, number],
+  sell: [216, 122, 69] as [number, number, number],
+  neutral: [235, 232, 225] as [number, number, number],
 };
 
 const BASE_NOTIONAL = 1_000;
 const MAX_VISUAL_NOTIONAL = 1_000_000;
-const DEFAULT_MOUSE_SIZE = 63;
+const DEFAULT_MOUSE_SIZE = 38;
 const MAX_MOUSE_SIZE = 220;
-const DEFAULT_WAVE_HEIGHT = 1.1;
+const DEFAULT_WAVE_HEIGHT = 1.95;
 const MAX_WAVE_HEIGHT = 2.2;
 
 function lerp(a: number, b: number, t: number): number {
@@ -31,7 +31,7 @@ export class LiquidRenderer {
   private orientation: "landscape" | "portrait" = "landscape";
   private liquidParams: LiquidVisualParams = {
     mouseSize: DEFAULT_MOUSE_SIZE,
-    viscosity: 0.985,
+    viscosity: 0.996,
     waveHeight: DEFAULT_WAVE_HEIGHT,
   };
 
@@ -77,6 +77,7 @@ export class LiquidRenderer {
       dx: portrait ? jitter : flow,
       dy: portrait ? flow : jitter,
       color: COLORS[trade.side],
+      side: trade.side,
       radius,
       force,
     });
@@ -97,6 +98,7 @@ export class LiquidRenderer {
       dx: portrait ? 0 : flow,
       dy: portrait ? flow : 0,
       color: COLORS[signal.side],
+      side: signal.side,
       radius: lerp(this.liquidParams.mouseSize * 0.9, MAX_MOUSE_SIZE * 0.8, visualWeight),
       force: lerp(this.liquidParams.waveHeight * 0.8, MAX_WAVE_HEIGHT, visualWeight) * clamp(signal.intensity, 0.8, 1.8),
     });

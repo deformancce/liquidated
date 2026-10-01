@@ -13,6 +13,23 @@ if (!(canvas instanceof HTMLCanvasElement)) {
   throw new Error("Missing flow canvas");
 }
 
+const landing = document.querySelector<HTMLElement>("#landing");
+const enterButtons = document.querySelectorAll<HTMLButtonElement>("[data-enter-app]");
+
+function enterInstrument(): void {
+  // Pointer/click activation is the reliable window for unlocking Web Audio,
+  // especially on iOS. Prime before DOM work and the async WASM load.
+  audio.prime();
+  audioMuted = false;
+  document.body.classList.remove("landing-active");
+  document.body.classList.add("instrument-active");
+  void setMode("live");
+  window.setTimeout(() => landing?.setAttribute("hidden", ""), 700);
+}
+
+enterButtons.forEach((button) => button.addEventListener("click", enterInstrument));
+enterButtons.forEach((button) => button.addEventListener("pointerdown", () => audio.prime()));
+
 const LIQUID_ANIMATION_ENABLED = true;
 const AUDIO_SETTINGS_KEY = "liquidated.audioSettings.v1";
 const DEFAULT_AGGREGATE = { windowMs: 250, bucket: 1 };
@@ -26,8 +43,8 @@ const aggregateState = { ...DEFAULT_AGGREGATE };
 const elements = {
   symbolSummary: mustQuery<HTMLElement>("#symbolSummary"),
   symbolOptions: [...document.querySelectorAll<HTMLButtonElement>("[data-market]")],
-  live: mustQuery<HTMLButtonElement>("#liveButton"),
-  off: mustQuery<HTMLButtonElement>("#offButton"),
+  mute: mustQuery<HTMLButtonElement>("#muteButton"),
+  muteLabel: mustQuery<HTMLElement>("#muteLabel"),
   raw: mustQuery<HTMLButtonElement>("#rawButton"),
   aggregated: mustQuery<HTMLButtonElement>("#aggregatedButton"),
   statusLight: mustQuery<HTMLSpanElement>("#statusLight"),
@@ -349,21 +366,61 @@ function setStatus(status: ConnectionStatus): void {
 
 type FeedMode = "off" | "live";
 let feedMode: FeedMode = "off";
+let audioMuted = true;
 
 async function setMode(mode: FeedMode): Promise<void> {
   feedMode = mode;
-  elements.live.classList.toggle("active", mode === "live");
-  elements.off.classList.toggle("active", mode === "off");
 
   if (mode === "live") {
     live.connect();
-    await audio.setEnabled(settings, true);
+    if (!audioMuted) {
+      setAudioButtonState("starting");
+      try {
+        const enabled = await audio.setEnabled(settings, true);
+        setAudioButtonState(enabled ? "on" : "muted");
+      } catch (error) {
+        audioMuted = true;
+        setAudioButtonState("error");
+        console.warn("Unable to start Liquidated audio", error);
+      }
+    }
   } else {
     live.disconnect();
     await audio.setEnabled(settings, false);
     elements.statusText.textContent = "Feed Off";
     elements.statusLight.classList.remove("live");
   }
+}
+
+async function toggleMute(): Promise<void> {
+  const shouldMute = !audioMuted;
+  if (shouldMute) {
+    audioMuted = true;
+    await audio.setEnabled(settings, false);
+    setAudioButtonState("muted");
+    return;
+  }
+
+  setAudioButtonState("starting");
+  try {
+    audio.prime();
+    const enabled = await audio.setEnabled(settings, true);
+    audioMuted = !enabled;
+    setAudioButtonState(enabled ? "on" : "error");
+  } catch (error) {
+    audioMuted = true;
+    setAudioButtonState("error");
+    console.warn("Unable to resume Liquidated audio", error);
+  }
+}
+
+function setAudioButtonState(state: "starting" | "on" | "muted" | "error"): void {
+  const muted = state === "muted" || state === "error";
+  elements.mute.disabled = state === "starting";
+  elements.mute.dataset.audioState = state;
+  elements.mute.setAttribute("aria-pressed", String(state === "on"));
+  elements.mute.setAttribute("aria-label", state === "error" ? "Retry sound" : muted ? "Turn sound on" : "Turn sound off");
+  elements.muteLabel.textContent = state === "starting" ? "Starting" : state === "on" ? "Sound on" : "Sound off";
 }
 
 function setMarket(market: Market): void {
@@ -540,11 +597,24 @@ function syncResonatorControls(): void {
   audio.setResonatorParams(params);
 }
 
+const LIQUID_PARAM_RANGES = {
+  mouseSize: { min: 1, midpoint: 38, max: 240 },
+  viscosity: { min: 0.9, midpoint: 0.996, max: 0.999 },
+  waveHeight: { min: 0.1, midpoint: 1.95, max: 2.5 },
+} as const;
+
+function liquidValueAtSliderPosition(position: number, range: { min: number; midpoint: number; max: number }): number {
+  const normalized = Math.min(1, Math.max(0, position / 100));
+  return normalized <= 0.5
+    ? range.min + (range.midpoint - range.min) * normalized * 2
+    : range.midpoint + (range.max - range.midpoint) * (normalized - 0.5) * 2;
+}
+
 function readLiquidParams(): { mouseSize: number; viscosity: number; waveHeight: number } {
   return {
-    mouseSize: Number(elements.liquid.mouseSize.input.value),
-    viscosity: Number(elements.liquid.viscosity.input.value),
-    waveHeight: Number(elements.liquid.waveHeight.input.value),
+    mouseSize: liquidValueAtSliderPosition(Number(elements.liquid.mouseSize.input.value), LIQUID_PARAM_RANGES.mouseSize),
+    viscosity: liquidValueAtSliderPosition(Number(elements.liquid.viscosity.input.value), LIQUID_PARAM_RANGES.viscosity),
+    waveHeight: liquidValueAtSliderPosition(Number(elements.liquid.waveHeight.input.value), LIQUID_PARAM_RANGES.waveHeight),
   };
 }
 
@@ -553,6 +623,9 @@ function syncLiquidControls(): void {
   elements.liquid.mouseSize.value.textContent = String(Math.round(params.mouseSize));
   elements.liquid.viscosity.value.textContent = params.viscosity.toFixed(3);
   elements.liquid.waveHeight.value.textContent = params.waveHeight.toFixed(2);
+  elements.liquid.mouseSize.input.setAttribute("aria-valuetext", String(Math.round(params.mouseSize)));
+  elements.liquid.viscosity.input.setAttribute("aria-valuetext", params.viscosity.toFixed(3));
+  elements.liquid.waveHeight.input.setAttribute("aria-valuetext", params.waveHeight.toFixed(2));
   renderer?.setLiquidParams(params);
 }
 
@@ -595,8 +668,7 @@ function setShaping(next: FeedShaping): void {
   elements.aggregated.classList.toggle("active", next === "aggregated");
 }
 
-elements.live.addEventListener("click", () => void setMode("live"));
-elements.off.addEventListener("click", () => void setMode("off"));
+elements.mute.addEventListener("click", () => void toggleMute());
 elements.symbolOptions.forEach((option) => {
   option.addEventListener("click", () => {
     setMarket(option.dataset.market as Market);
@@ -718,7 +790,17 @@ syncLiquidControls();
 syncSettings();
 setMarket(settings.market);
 renderer?.render(settings);
-void setMode(feedMode);
+// Vite can preserve the visible DOM across a hot reload while module state is
+// recreated. Keep the already-open instrument connected, but require a fresh
+// gesture before claiming audio is enabled.
+const instrumentAlreadyOpen = document.body.classList.contains("instrument-active") || landing?.hasAttribute("hidden");
+if (instrumentAlreadyOpen) {
+  feedMode = "live";
+  setAudioButtonState("muted");
+  void setMode("live");
+} else {
+  void setMode("off");
+}
 setShaping(feedShaping);
 updateTapeAges();
 decayStats();

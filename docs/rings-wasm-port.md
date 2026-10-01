@@ -1,6 +1,6 @@
 # Rings DSP Port
 
-Goal: run the original Rings DSP core in the browser, driven by the Liquidated/HL order gate and pitch model.
+Status: the original Rings DSP core now runs in the browser as WebAssembly, driven by the Liquidated/HL order gate and pitch model.
 
 ## Source Choice
 
@@ -65,11 +65,17 @@ Compile a small C++ bridge with Emscripten:
 
 Run that bridge inside an `AudioWorkletProcessor`. The React page sends fader/order events to the worklet; the worklet owns the DSP state so audio stays real-time and does not depend on React timing.
 
-## Local Requirement
+## Browser Integration
 
-This machine currently has no `emcc`, so the real WASM artifact cannot be built yet. Install Emscripten first, then run:
+The generated loader and binary are shipped as:
+
+- `public/rings/rings-dsp.js`
+- `public/rings/rings-dsp.wasm`
+
+`RingsWasmVoice` loads the module, owns the Web Audio context, exposes the patch controls, and renders each strum into a playable buffer. Audio is primed synchronously inside the user's entry or sound-button gesture so mobile Safari does not reject the later asynchronous WASM initialization.
+
+To rebuild the artifacts after changing the native bridge, install Emscripten and run:
 
 ```sh
 npm run build:rings-wasm
 ```
-

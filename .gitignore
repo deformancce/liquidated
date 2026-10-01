@@ -11,3 +11,7 @@ src/visual/fluid/FluidSimulation 2.ts
 
 # Local Netlify folder
 .netlify
+
+# Local design-tool state and the abandoned standalone docs prototype
+.impeccable/
+documentation/

@@ -22,6 +22,7 @@ export interface FluidSplat {
   dx: number;
   dy: number;
   color: [number, number, number];
+  side: "buy" | "sell";
   radius: number;
   force: number;
 }
@@ -55,8 +56,10 @@ const DROPS_PER_FRAME = 10;
 // feed keeps pushing splats, so without a hard cap the array grows unbounded and
 // the first frame back has to paint thousands of full-canvas gradients (freeze).
 const MAX_DYE_SPLATS = 80;
-const DEFAULT_MOUSE_SIZE = 63;
-const DEFAULT_WAVE_HEIGHT = 1.1;
+const DEFAULT_MOUSE_SIZE = 38;
+const DEFAULT_WAVE_HEIGHT = 1.95;
+const BUY_RGB = [53, 214, 166] as const;
+const SELL_RGB = [216, 122, 69] as const;
 
 export interface LiquidVisualParams {
   mouseSize: number;
@@ -116,7 +119,7 @@ export class FluidSimulation {
   private orientation: "landscape" | "portrait" = "landscape";
   private lastRender = performance.now();
   private elapsed = 0;
-  private viscosity = 0.985;
+  private viscosity = 0.996;
   private mouseSize = DEFAULT_MOUSE_SIZE;
   private waveHeight = DEFAULT_WAVE_HEIGHT;
 
@@ -215,16 +218,15 @@ export class FluidSimulation {
   }
 
   splat(input: FluidSplat): void {
-    const side = input.color[1] > input.color[0] ? "buy" : input.color[0] > input.color[1] ? "sell" : "neutral";
+    const side = input.side;
     const minDim = Math.min(this.geomWidth, this.geomHeight);
     const baseRadius = input.radius <= 2 ? input.radius * minDim : input.radius;
     const radius = clamp(baseRadius * this.sizeScale, 8, 240);
     const strength = clamp(input.force, this.waveHeight, 2.5);
     const visualWeight = clamp(Math.max((radius - this.mouseSize) / 150, (strength - this.waveHeight) / 1.1), 0, 1);
-    const positionedX =
-      side === "neutral" || this.orientation === "portrait"
-        ? input.x
-        : this.positionXByDominance(input.x, side, strength);
+    const positionedX = this.orientation === "portrait"
+      ? input.x
+      : this.positionXByDominance(input.x, side, strength);
     const x = clamp(positionedX, 0.035, 0.965);
     const y = clamp(input.y, 0.08, 0.92);
 
@@ -245,9 +247,7 @@ export class FluidSimulation {
       this.pendingDrops.splice(0, this.pendingDrops.length - MAX_PENDING_DROPS);
     }
 
-    if (side !== "neutral") {
-      this.pushDyeSplat(x, y, side, radius, strength, visualWeight);
-    }
+    this.pushDyeSplat(x, y, side, radius, strength, visualWeight);
   }
 
   render(): void {
@@ -277,6 +277,13 @@ export class FluidSimulation {
     }
 
     this.waterUniforms.heightmap.value = this.gpuCompute.getCurrentRenderTarget(this.heightmapVariable).texture;
+    const buyDominant = this.sideDominance >= 0;
+    this.waterUniforms.dominantTint.value.setRGB(
+      (buyDominant ? BUY_RGB[0] : SELL_RGB[0]) / 255,
+      (buyDominant ? BUY_RGB[1] : SELL_RGB[1]) / 255,
+      (buyDominant ? BUY_RGB[2] : SELL_RGB[2]) / 255,
+    );
+    this.waterUniforms.dominanceStrength.value = Math.min(1, Math.abs(this.sideDominance) * 1.8);
     this.drawReflectionTexture(dt);
     this.renderer.render(this.scene, this.camera);
   }
@@ -351,18 +358,18 @@ export class FluidSimulation {
       if (buyDominance > 0.01) {
         const edge = THREE.MathUtils.lerp(h * 0.98, h * 0.16, buyDominance);
         const g = ctx.createLinearGradient(0, edge, 0, h);
-        g.addColorStop(0, "rgba(38,255,148,0)");
-        g.addColorStop(0.48, `rgba(38,255,148,${0.12 + buyDominance * 0.16})`);
-        g.addColorStop(1, `rgba(38,255,148,${0.22 + buyDominance * 0.28})`);
+        g.addColorStop(0, `rgba(${BUY_RGB.join(",")},0)`);
+        g.addColorStop(0.48, `rgba(${BUY_RGB.join(",")},${0.12 + buyDominance * 0.16})`);
+        g.addColorStop(1, `rgba(${BUY_RGB.join(",")},${0.22 + buyDominance * 0.28})`);
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);
       }
       if (sellDominance > 0.01) {
         const edge = THREE.MathUtils.lerp(h * 0.02, h * 0.84, sellDominance);
         const g = ctx.createLinearGradient(0, 0, 0, edge);
-        g.addColorStop(0, `rgba(255,52,76,${0.22 + sellDominance * 0.28})`);
-        g.addColorStop(0.52, `rgba(255,52,76,${0.12 + sellDominance * 0.16})`);
-        g.addColorStop(1, "rgba(255,52,76,0)");
+        g.addColorStop(0, `rgba(${SELL_RGB.join(",")},${0.22 + sellDominance * 0.28})`);
+        g.addColorStop(0.52, `rgba(${SELL_RGB.join(",")},${0.12 + sellDominance * 0.16})`);
+        g.addColorStop(1, `rgba(${SELL_RGB.join(",")},0)`);
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);
       }
@@ -370,18 +377,18 @@ export class FluidSimulation {
       if (buyDominance > 0.01) {
         const edge = THREE.MathUtils.lerp(w * 0.98, w * 0.16, buyDominance);
         const g = ctx.createLinearGradient(edge, 0, w, 0);
-        g.addColorStop(0, "rgba(38,255,148,0)");
-        g.addColorStop(0.48, `rgba(38,255,148,${0.12 + buyDominance * 0.16})`);
-        g.addColorStop(1, `rgba(38,255,148,${0.22 + buyDominance * 0.28})`);
+        g.addColorStop(0, `rgba(${BUY_RGB.join(",")},0)`);
+        g.addColorStop(0.48, `rgba(${BUY_RGB.join(",")},${0.12 + buyDominance * 0.16})`);
+        g.addColorStop(1, `rgba(${BUY_RGB.join(",")},${0.22 + buyDominance * 0.28})`);
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);
       }
       if (sellDominance > 0.01) {
         const edge = THREE.MathUtils.lerp(w * 0.02, w * 0.84, sellDominance);
         const g = ctx.createLinearGradient(0, 0, edge, 0);
-        g.addColorStop(0, `rgba(255,52,76,${0.22 + sellDominance * 0.28})`);
-        g.addColorStop(0.52, `rgba(255,52,76,${0.12 + sellDominance * 0.16})`);
-        g.addColorStop(1, "rgba(255,52,76,0)");
+        g.addColorStop(0, `rgba(${SELL_RGB.join(",")},${0.22 + sellDominance * 0.28})`);
+        g.addColorStop(0.52, `rgba(${SELL_RGB.join(",")},${0.12 + sellDominance * 0.16})`);
+        g.addColorStop(1, `rgba(${SELL_RGB.join(",")},0)`);
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);
       }
@@ -413,11 +420,11 @@ export class FluidSimulation {
       const radius = splat.radius * (0.7 + t * 1.45);
       const pulse = 0.92 + Math.sin(this.elapsed * 3.2 + splat.seed) * 0.08;
       const alpha = Math.min(0.92, splat.strength * fade) * pulse;
-      const rgb = splat.side === "buy" ? [38, 255, 148] : [255, 52, 76];
+      const rgb = splat.side === "buy" ? BUY_RGB : SELL_RGB;
       const x = splat.u * w;
       // The canvas→screen Y mapping differs by orientation: landscape needs (1 - v) to
       // land the flash on the drop, portrait needs v (green buys end up at the bottom,
-      // red sells at the top, matching the dominance glow). See drop mapping above.
+      // orange sells at the top, matching the dominance glow). See drop mapping above.
       const y = (this.orientation === "portrait" ? splat.v : 1 - splat.v) * h;
       ctx.save();
       ctx.translate(x, y);
@@ -492,6 +499,8 @@ export class FluidSimulation {
         THREE.ShaderLib.phong.uniforms,
         {
           heightmap: { value: null },
+          dominantTint: { value: new THREE.Color(0x35d6a6) },
+          dominanceStrength: { value: 0 },
         },
       ]),
       vertexShader: WaterVertex,

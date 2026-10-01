@@ -2,16 +2,16 @@
 
 Liquidated is an audio-visual orderflow instrument for Hyperliquid perpetual markets. It turns public buy/sell flow into a live tape, a trade-triggered synth, and liquid WebGL visuals where order size controls impact, spread, colour, and sound.
 
-Live: https://liquidated-976.netlify.app
+Live: https://liquidated.app
 
 **New here?** Read [What it is & how it works](docs/how-it-works.md) for a full walkthrough of the interface and the data → tape → synth → visuals pipeline.
 
 The project is built as a Vite + TypeScript app with three views:
 
-- Full experience: https://liquidated-976.netlify.app
-- Buy/sell tape: https://liquidated-976.netlify.app/tape
-- Flow synth: https://liquidated-976.netlify.app/synth
-- Visual lab: https://liquidated-976.netlify.app/visuals
+- Full experience: https://liquidated.app
+- Buy/sell tape: https://liquidated.app/tape
+- Flow synth: https://liquidated.app/synth
+- Visual lab: https://liquidated.app/visuals
 
 ## Run Locally
 
@@ -29,11 +29,13 @@ npm run dev
 
 ## Resources
 
-- Hyperliquid API docs: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api
+- Hyperliquid public WebSocket data: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions
 - Hyperliquid Python SDK: https://github.com/hyperliquid-dex/hyperliquid-python-sdk
-- WebGL liquid renderer inspiration: https://github.com/PavelDoGreat/WebGL-Fluid-Simulation
+- Liquid simulation lineage: https://github.com/mrdoob/three.js/blob/dev/examples/webgl_gpgpu_water.html, https://github.com/franky-adl/water-ripples, and https://github.com/PavelDoGreat/WebGL-Fluid-Simulation
+- Sound algorithm: https://github.com/pichenettes/eurorack/tree/master/rings by Émilie Gillet
 - Tone.js audio engine: https://tonejs.github.io/
 - Three.js rendering: https://threejs.org/
+- Full attribution and licence notes: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 
 ## Current Scope
 
@@ -46,11 +48,11 @@ npm run dev
 
 ## Deployment
 
-The app builds to `dist/` and can be deployed as a static site:
+The app builds to `dist/` and is deployed directly to Cloudflare Pages without a Git provider connection:
 
 ```bash
 npm run build
-npx netlify deploy --prod --dir=dist
+npx wrangler@latest pages deploy dist --project-name=liquidated --branch=main
 ```
 
-Production deploys currently run on Netlify: https://liquidated-976.netlify.app
+Production: https://liquidated.app

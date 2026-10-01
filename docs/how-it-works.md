@@ -12,7 +12,9 @@ and turns the raw buy/sell flow into three things at once:
 Nothing is simulated by default — when the feed is **Live**, every drop of sound and motion is
 driven by real trades coming off Hyperliquid's WebSocket.
 
-> Live app: https://liquidated-976.netlify.app
+The opening landing page acts as the threshold into the instrument. Pressing **Enter live instrument** connects the market feed and primes Web Audio in the same gesture, which is important for browsers that block audio until the user interacts with the page. No wallet or exchange login is required.
+
+> Live app: https://liquidated.app
 
 ---
 
@@ -43,7 +45,7 @@ The control bar (top-left on desktop, top bar + burger menu on mobile) drives ev
 | **Raw / Aggregated** | *Raw* shows every fill. *Aggregated* merges same-side fills that land close together in time and price into a single, larger print. |
 | **Range** | A dual slider that filters prints by notional size ($), so you can hide noise and focus on the big flow. |
 | **Grouping** | The aggregation buckets — a time window (ms) and a price bucket ($). Click it to pick values; the active choice is checked. |
-| **Off / Live** | Connects/disconnects the feed and audio. The dot in the pill glows **red** when the stream is live. |
+| **Sound off / Sound on** | Mutes or resumes the resonator without stopping the live market feed. The indicator turns green while audio is active. |
 | **Audio settings** | Tunes the resonator synth (voices, frequency, structure, damping, brightness, release…). |
 | **Liquid settings** | Tunes the fluid renderer (mouse/impact size, viscosity, wave height). |
 
@@ -56,6 +58,8 @@ and a metric block:
 - **Pressure** — a left/right meter showing whether bid or ask aggression dominates.
 
 > On mobile, drag the handle at the bottom to pull the tape sheet up over the visual.
+
+The feed connects when you enter the instrument. Sound remains a separate control, so the tape and liquid field can keep following the market in silence.
 
 ---
 
@@ -91,17 +95,17 @@ heavier audio hits.
 
 ### 4. Audio engine
 The synth is a **physical-modelling resonator** (a Rings-style modal/sympathetic-string voice,
-compiled to WebAssembly with a Tone.js / Web-Audio fallback). Trades pluck voices: trade size maps
+compiled from the original Rings DSP core to WebAssembly). Trades pluck voices: trade size maps
 to which "tier" and velocity is used, side influences pitch/colour, and signals trigger stronger
 strikes. The **Audio settings** panel exposes the resonator's core parameters so you can shape the
-instrument live. Audio only runs while the feed is **Live**.
+instrument live. Audio is unlocked directly from the entry or sound-button gesture. On iOS, Liquidated also requests the playback audio session so the instrument can sound even when the hardware ring switch is silent.
 
 ### 5. Liquid renderer
 A GPU **fluid simulation** (WebGL) reacts to flow: each trade injects a splat whose **size** scales
-with notional, whose **colour** is green for buys / red for sells, and whose **direction** reflects
-buy vs. sell pressure. Larger trades make bigger, brighter impacts. The **Liquid settings** panel
-tunes impact size, viscosity, and wave height. The renderer adapts to portrait/landscape so it
-fills the screen on mobile.
+with notional, whose **colour** is green for buys / orange for sells, and whose **direction** reflects
+buy vs. sell pressure. Larger trades make bigger, brighter impacts. Directional pressure also tints the reflected surface, so sustained one-sided flow changes the character of the whole field rather than only producing isolated drops.
+
+The **Liquid settings** panel tunes impact size, viscosity, and wave height through normalized controls with a usable midpoint. The renderer adapts to portrait and landscape: buys occupy the lower side and sells the upper side in portrait, while the same opposition runs horizontally on wider screens. Pending impact and colour queues are capped and stale frame time is discarded after sleep, which prevents a backgrounded tab from replaying a large render backlog when it wakes.
 
 ---
 
@@ -133,20 +137,22 @@ npm run preview    # serve the build locally
 ```
 
 ### Data sources
-- **Hyperliquid public WebSocket** — live trades and BBO (the default, no key needed).
+- **[Hyperliquid public WebSocket](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions)** — live trades and BBO (the default, no wallet or API key needed).
 - Optional Hyperliquid user-events / fills clients for user-scoped liquidation experiments.
 - Optional local **liquidation indexer** reading a Hyperliquid node's `node_fills_by_block` output
   or a gRPC-style liquidation feed.
 - Optional The Graph Token API proxy for historical liquidation experiments
   (`THE_GRAPH_TOKEN_API_KEY`).
 
+The live market stream is publicly accessible data; it is not described here as “open-source data.” See [Sources, credits and thanks](credits.md) for provenance, licences, and acknowledgements for the liquid and sound algorithms.
+
 ---
 
 ## Tech stack
 - **Vite + TypeScript** app, no framework for the main view (React is used by some sub-apps).
-- **WebGL** fluid simulation for the liquid layer.
-- **WebAssembly resonator** + **Tone.js / Web Audio** for sound.
-- Deployed as a static site (Netlify).
+- **Three.js + GPUComputationRenderer** for the WebGL liquid simulation and reflected water surface.
+- **Original Rings DSP compiled to WebAssembly** and routed through Web Audio for sound.
+- Deployed as a static site on Cloudflare Pages.
 
 ---
 

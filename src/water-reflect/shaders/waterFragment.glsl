@@ -5,6 +5,8 @@ uniform vec3 emissive;
 uniform vec3 specular;
 uniform float shininess;
 uniform float opacity;
+uniform vec3 dominantTint;
+uniform float dominanceStrength;
 
 #include <common>
 #include <packing>
@@ -35,6 +37,7 @@ uniform float opacity;
 void main() {
 
 	vec4 diffuseColor = vec4( diffuse, opacity );
+	vec3 reflectedSurfaceColor = vec3( 0.0 );
 	#include <clipping_planes_fragment>
 
 	ReflectedLight reflectedLight = ReflectedLight( vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ) );
@@ -49,7 +52,8 @@ void main() {
         // adding normal.xy to the map uv ripples the image with the waves. Keep only a
         // fraction of it so the coloured flash stays aligned with the drop that spawned
         // it instead of being pushed off-centre by the wave it sits on.
-        vec4 sampledDiffuseColor = texture2D( map, vMapUv + vnormal.xy * 0.3 );
+        vec4 sampledDiffuseColor = texture2D( map, vMapUv + vnormal.xy * 0.16 );
+        reflectedSurfaceColor = sampledDiffuseColor.rgb;
 
         #ifdef DECODE_VIDEO_TEXTURE
 
@@ -81,7 +85,14 @@ void main() {
 	// modulation
 	#include <aomap_fragment>
 
-	vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + reflectedLight.indirectSpecular + totalEmissiveRadiance;
+	// Preserve a portion of the reflection independently of direct lighting. On
+	// steep wave flanks Phong's direct diffuse can approach zero; without this
+	// contribution those sides become pitch black and lose the active buy/sell
+	// tint carried by the reflection texture.
+	float grazingAmount = 1.0 - abs( normal.z );
+	vec3 directionalTint = dominantTint * dominanceStrength * ( 0.08 + grazingAmount * 0.24 );
+	vec3 grazingReflection = reflectedSurfaceColor * ( 0.18 + 0.22 * grazingAmount ) + directionalTint;
+	vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + reflectedLight.indirectSpecular + totalEmissiveRadiance + grazingReflection;
 
 	#include <envmap_fragment>
 	#include <opaque_fragment>
